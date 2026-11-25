@@ -580,6 +580,10 @@ function renderPlanning() {
     <div class="seg"><button data-act="wk-" aria-label="Semaine précédente">‹</button><button data-act="wk0" class="${off === 0 ? 'on' : ''}">Auj.</button><button data-act="wk+" aria-label="Semaine suivante">›</button></div>
     <div class="seg"><button data-act="n-" aria-label="Moins de semaines">−</button><span class="seg-l">${n} sem.</span><button data-act="n+" aria-label="Plus de semaines">+</button></div>`;
   let h = '';
+  if (!S.tasks.length) h += `<div class="card" style="margin:0 8px 12px;text-align:center"><h3>Ton planning est vide</h3>
+    <p>Tu as un fichier de sauvegarde (planning-….json) ? Touche le bouton et choisis-le.</p>
+    <label class="btn primary" style="display:inline-block">📥 Importer ma sauvegarde<input type="file" id="importFile" accept="application/json,.json,text/plain,*/*" hidden></label>
+    <p style="margin-top:10px">Sinon, touche <b>+</b> en bas à droite pour créer ta première tâche.</p></div>`;
   const nl = S.tasks.filter(isActive).reduce((k, x) => k + x.slots.filter(slotLate).length, 0);
   if (nl) h += `<div class="banner"><span>⚠ ${nl} tâche${nl > 1 ? 's' : ''} en retard</span><button class="btn sm" data-act="late-today">Tout mettre à aujourd'hui</button></div>`;
   const unpl = S.tasks.filter(x => isActive(x) && unplaced(x)).sort(byPrio);
@@ -704,7 +708,11 @@ function renderSettings() {
   $('#headerTools').innerHTML = '';
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
   const permTxt = { granted: '✅ Activées', denied: '⛔ Bloquées dans les réglages du navigateur', default: 'Pas encore activées', unsupported: '⚠ Non disponibles ici' }[perm];
-  $('#main').innerHTML = syncCardHTML() + `
+  $('#main').innerHTML = `<div class="card"><h3>💾 Sauvegarde</h3>
+    <p><b>Importer</b> = récupérer un fichier de sauvegarde (.json). <b>Exporter</b> = créer ce fichier.</p>
+    <label class="btn primary">📥 Importer une sauvegarde<input type="file" id="importFile" accept="application/json,.json,text/plain,*/*" hidden></label>
+    <button class="btn" data-act="export">📤 Exporter</button>
+    <button class="btn danger" data-act="purge">Effacer terminées et barrées</button></div>` + syncCardHTML() + `
   <div class="card"><h3>🔔 Notifications</h3>
     <p>Une notification résume en permanence les tâches du jour, celles en retard, les colis attendus et les besoins à obtenir. Elle se met à jour à chaque ouverture de l'app et à chaque changement.<br><b>${permTxt}</b></p>
     <button class="btn primary" data-act="notif-on">Activer</button><button class="btn" data-act="notif-test">Tester</button>
@@ -752,10 +760,7 @@ function renderSettings() {
     ${CAT_KINDS.map(([k, l]) => catEditor(k, l)).join('')}</div>
   <div class="card"><h3>Thème</h3>
     <div class="seg" style="display:inline-flex">${[['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<button data-act="theme" data-v="${k}" class="${S.settings.theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-  <div class="card"><h3>💾 Sauvegarde</h3>
-    <p>Les données restent sur ce téléphone. Exporte un fichier de temps en temps pour ne rien perdre.</p>
-    <button class="btn" data-act="export">Exporter</button><label class="btn">Importer<input type="file" id="importFile" accept="application/json,.json" hidden></label>
-    <button class="btn danger" data-act="purge">Effacer terminées et barrées</button></div>`;
+`;
 }
 
 /* ---------- bottom sheet ---------- */
@@ -1132,7 +1137,7 @@ function toast(msg, undo) {
   el.classList.add('show'); clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), undo ? 4500 : 2200);
 }
-function scrollToToday() { requestAnimationFrame(() => { const d = $('.day.today'); if (d) $('#main').scrollTop = Math.max(0, d.offsetTop - 120); }); }
+function scrollToToday() { if (!S.tasks.length) return; requestAnimationFrame(() => { const d = $('.day.today'); if (d) $('#main').scrollTop = Math.max(0, d.offsetTop - 120); }); }
 
 /* ---------- glisser-déposer (tactile : appui long ; souris : glisser) ---------- */
 let pending = null, drag = null, justDragged = 0;
