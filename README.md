@@ -17,6 +17,11 @@ App de planning très simple (PWA : s'installe sur l'écran d'accueil, marche ho
 - **Notifications** (Réglages → Activer) : résumé des tâches du jour, en retard, des colis attendus et des besoins non remplis.
 - **Sauvegarde** : données stockées sur le téléphone, export/import d'un fichier JSON dans Réglages.
 
+## Apparence
+Thème « verre » sombre (panneaux translucides sur fond dégradé ou fond d'écran). Seules couleurs : l'importance (trait à gauche de chaque tâche, réglable) et la couleur du nom de chaque jour.
+
+**Sur ordinateur** : menu latéral, chaque semaine sur une ligne de 7 jours, glisser-déposer à la souris, menus en fenêtre centrée. Raccourcis : **N** nouvelle tâche, **← →** semaine précédente / suivante, **T** aujourd'hui, **Échap** fermer.
+
 ## Synchronisation téléphone ↔ ordinateur
 Réglages → Synchronisation : coller un jeton GitHub (permission « gist » uniquement, créé sur https://github.com/settings/tokens/new?scopes=gist&description=Planning). L'app crée un Gist **privé** « planning-sync.json » et s'y synchronise : à l'ouverture, au retour sur l'app, toutes les 45 s et quelques secondes après chaque modification. La fusion se fait tâche par tâche (la modification la plus récente gagne, les suppressions sont conservées), donc on peut modifier sur les deux appareils. Le fond d'écran n'est pas synchronisé.
 
