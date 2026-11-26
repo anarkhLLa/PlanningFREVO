@@ -53,6 +53,11 @@ export const GameConfig = {
     starterRefillDaily: true
   },
 
+  /** Constructions / réparations (cahier 13.3). */
+  build: {
+    bench: { wood: 10, scrap: 5 } as Record<string, number>
+  },
+
   /** Distance (en cases) à laquelle les blocs devant le joueur deviennent transparents. */
   occlusionRange: 3,
   occlusionAlpha: 0.3

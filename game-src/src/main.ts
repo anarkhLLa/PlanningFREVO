@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import './style.css';
-import { RefugeScene } from './game/scenes/RefugeScene';
+import { WorldScene } from './game/scenes/WorldScene';
 import { loadGame } from './game/save';
 
 const saved = await loadGame();
@@ -11,7 +11,7 @@ const game = new Phaser.Game({
   pixelArt: true, // rendu net, façon blocs
   scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
   input: { activePointers: 3 },
-  scene: [RefugeScene],
+  scene: [WorldScene],
   callbacks: { preBoot: g => g.registry.set('state', saved) }
 });
 void game;

@@ -50,11 +50,11 @@ export async function saveGame(s: GameState): Promise<void> {
 /** Planifie une sauvegarde (regroupe les changements rapprochés). */
 export class AutoSave {
   private timer = 0;
-  constructor(private get: () => GameState) {
+  constructor(private get: () => GameState, private onSaved: () => void = () => {}) {
     setInterval(() => this.now(), 10000);
     addEventListener('visibilitychange', () => { if (document.hidden) this.now(); });
     addEventListener('pagehide', () => this.now());
   }
   soon(ms = 600) { clearTimeout(this.timer); this.timer = window.setTimeout(() => this.now(), ms); }
-  now() { clearTimeout(this.timer); void saveGame(this.get()); }
+  now() { clearTimeout(this.timer); void saveGame(this.get()).then(() => this.onSaved()); }
 }

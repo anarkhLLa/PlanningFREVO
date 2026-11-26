@@ -27,6 +27,7 @@ export interface GameState {
   ledger: Ledger;
   containers: Record<string, ContainerState>;
   claimed: string[]; // contrats dont la cache a été récupérée (lu aussi par le planning)
+  built: string[]; // constructions / réparations faites (ex. « refuge:bench »)
 }
 
 export function newGame(map: ZoneMap, now = Date.now()): GameState {
@@ -41,7 +42,8 @@ export function newGame(map: ZoneMap, now = Date.now()): GameState {
     equipment: { bag: bag.id, main: inv.items[0].id },
     ledger: newLedger(),
     containers: {},
-    claimed: []
+    claimed: [],
+    built: []
   };
   post(s.ledger, 'start:capsules:v1', GameConfig.start.capsules, 'Capsules de départ', now);
   return s;
@@ -55,6 +57,7 @@ export function migrate(raw: unknown): GameState | null {
   // (aucune migration encore : schéma 1)
   s.containers ||= {};
   s.claimed ||= [];
+  s.built ||= [];
   s.equipment ||= {};
   return s;
 }
@@ -80,7 +83,9 @@ type LootTable = (rnd: () => number) => [string, number][];
 const between = (rnd: () => number, a: number, b: number) => a + Math.floor(rnd() * (b - a + 1));
 export const LOOT: Record<string, LootTable> = {
   starter: () => Object.entries(GameConfig.start.starterCrate),
-  cabin: r => [['wood', between(r, 3, 5)], ['scrap', between(r, 2, 3)], ['components', 1]]
+  cabin: r => [['wood', between(r, 3, 5)], ['scrap', between(r, 2, 3)], ['components', 1]],
+  garage_box: r => [['scrap', between(r, 4, 6)], ['components', 1]],
+  garage_locker: r => [['wood', between(r, 2, 4)], ['scrap', between(r, 1, 3)]]
 };
 
 const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -93,9 +98,10 @@ const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 export function openContainer(s: GameState, obj: WorldObject, now = Date.now()): ContainerState {
   let c = s.containers[obj.id];
   if (!c) c = s.containers[obj.id] = { items: newInventory(16, 0), generated: false, searched: false };
-  if (!c.generated && obj.loot) {
+  if (!c.generated && (obj.loot || obj.lootItems)) {
     const rnd = mulberry32(hashSeed(obj.id + ':loot:v1'));
-    for (const [def, qty] of LOOT[obj.loot](rnd)) addItem(c.items, def, qty);
+    const loot = obj.lootItems ?? LOOT[obj.loot!](rnd);
+    for (const [def, qty] of loot) addItem(c.items, def, qty);
     c.generated = true;
     if (obj.loot === 'starter') c.refillDay = dayOf(now);
   } else if (obj.loot === 'starter' && GameConfig.start.starterRefillDaily && c.refillDay !== dayOf(now)) {
@@ -149,3 +155,48 @@ export function findTarget(map: ZoneMap, px: number, py: number, facing: number)
 }
 
 export const describeStack = (def: string, qty: number) => `${itemDef(def).icon} ${itemDef(def).name}${qty > 1 ? ' ×' + qty : ''}`;
+
+/**
+ * Une cache de contrat est « récupérée » quand elle a été ouverte et vidée.
+ * Renvoie true la première fois (pour afficher un message), false ensuite.
+ */
+export function claimIfEmpty(s: GameState, obj: WorldObject): boolean {
+  if (!obj.contractId || s.claimed.includes(obj.contractId)) return false;
+  const c = s.containers[obj.id];
+  if (!c || !c.generated || c.items.items.length > 0) return false;
+  s.claimed.push(obj.contractId);
+  return true;
+}
+
+/** Réparer l'établi : consomme les ressources du sac (une seule fois). */
+export function repairBench(s: GameState): { ok: boolean; missing: [string, number][] } {
+  if (s.built.includes('refuge:bench')) return { ok: false, missing: [] };
+  const cost = Object.entries(GameConfig.build.bench);
+  const missing = cost.map(([d, q]) => [d, q - countOf(s.inventory, d)] as [string, number]).filter(([, q]) => q > 0);
+  if (missing.length) return { ok: false, missing };
+  for (const [d, q] of cost) removeItem(s.inventory, d, q);
+  s.built.push('refuge:bench');
+  return { ok: true, missing: [] };
+}
+
+/**
+ * Fusion de deux sauvegardes (deux appareils) : on part de la plus récente,
+ * puis on réunit ce qui ne doit JAMAIS se perdre ni se doubler :
+ * registre des capsules (union par clé d'idempotence), caches récupérées, constructions.
+ * On n'additionne jamais deux soldes (cahier 24.3).
+ */
+export function mergeSaves(a: GameState, b: GameState): GameState {
+  const [base, other] = (a.savedAt || 0) >= (b.savedAt || 0) ? [a, b] : [b, a];
+  const out: GameState = JSON.parse(JSON.stringify(base));
+  const keys = new Set(out.ledger.entries.map(e => e.key));
+  for (const e of other.ledger.entries) if (!keys.has(e.key)) { out.ledger.entries.push(e); keys.add(e.key); }
+  out.ledger.entries.sort((x, y) => x.at - y.at);
+  out.claimed = [...new Set([...(out.claimed || []), ...(other.claimed || [])])];
+  out.built = [...new Set([...(out.built || []), ...(other.built || [])])];
+  // une caisse vidée sur un appareil reste vidée (pas de butin doublé)
+  for (const [id, c] of Object.entries(other.containers || {})) {
+    const mine = out.containers[id];
+    if (!mine) out.containers[id] = c; // sinon : la version la plus récente fait foi
+  }
+  return out;
+}

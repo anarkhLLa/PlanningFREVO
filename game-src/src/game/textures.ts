@@ -28,6 +28,14 @@ const PAINT: Record<string, Painter> = {
   },
   log: (i, _j, r, face) => face === 'top' ? jitter(i % 3 === 0 ? [150, 118, 74] : [170, 136, 86], r, 0.06) : jitter(i % 2 ? [92, 66, 40] : [104, 76, 46], r, 0.08),
   leaves: (_i, _j, r) => (r() < 0.18 ? [52, 92, 40] : jitter([74, 128, 52], r, 0.16)),
+  concrete: (i, j, r) => (i % 4 === 0 && j % 4 === 0 ? [120, 120, 118] : jitter([150, 150, 146], r, 0.05)),
+  brick: (i, j, r, face) => face === 'top' ? jitter([150, 70, 56], r, 0.08) : ((j % 2 === 1) || ((i + (j % 4 === 0 ? 0 : 2)) % 4 === 0) ? [190, 184, 170] : jitter([156, 72, 56], r, 0.1)),
+  cache: (i, j, r, face) => {
+    if (face === 'top') return i === 3 || i === 4 ? [230, 190, 60] : jitter([88, 104, 60], r, 0.06);
+    const frame = i === 0 || j === 0 || i === N - 1 || j === N - 1;
+    return frame ? [58, 70, 40] : j === 3 ? [230, 190, 60] : jitter([96, 112, 64], r, 0.06);
+  },
+  bench_ok: (i, j, r, face) => face === 'top' ? (i % 4 === 3 ? [110, 80, 48] : jitter([186, 140, 84], r, 0.05)) : (j > 5 || (i > 0 && i < N - 1 && j > 1) ? [70, 52, 34] : jitter([150, 110, 64], r, 0.05)),
   stone: (_i, _j, r) => jitter(r() < 0.2 ? [110, 110, 112] : [138, 138, 140], r, 0.08),
   crate: (i, j, r) => {
     const frame = i === 0 || j === 0 || i === N - 1 || j === N - 1 || i === j;
@@ -78,7 +86,7 @@ export const GROUND_VARIANTS = 3;
 export function makeTextures(scene: Phaser.Scene) {
   const tex = scene.textures;
   // Sols : plusieurs variantes par matériau pour éviter l'effet « papier peint »
-  for (const g of ['grass', 'grass2', 'dirt', 'road', 'gravel', 'planks'] as Ground[]) {
+  for (const g of ['grass', 'grass2', 'dirt', 'road', 'gravel', 'planks', 'concrete'] as Ground[]) {
     for (let v = 0; v < GROUND_VARIANTS; v++) {
       const { c, ctx } = canvas(TW, TH);
       paintTop(ctx, PAINT[g], mulberry32(1000 + v * 31 + g.length * 7));
@@ -86,7 +94,7 @@ export function makeTextures(scene: Phaser.Scene) {
     }
   }
   // Cubes : dessus + face gauche (ombre 0.78) + face droite (ombre 0.62)
-  for (const b of ['log', 'leaves', 'planks', 'stone', 'crate', 'bench'] as Block[]) {
+  for (const b of ['log', 'leaves', 'planks', 'stone', 'crate', 'bench', 'bench_ok', 'cache', 'brick'] as Block[]) {
     const { c, ctx } = canvas(TW, TH + BH);
     const rnd = mulberry32(5000 + b.length * 13);
     paintSide(ctx, left, PAINT[b], rnd, 0.78);

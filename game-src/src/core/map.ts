@@ -1,9 +1,9 @@
 import { mulberry32 } from './rng';
 
 /** Types de sol (couche 0). */
-export type Ground = 'grass' | 'grass2' | 'dirt' | 'planks' | 'road' | 'gravel';
+export type Ground = 'grass' | 'grass2' | 'dirt' | 'planks' | 'road' | 'gravel' | 'concrete';
 /** Types de blocs empilables (cubes façon Minecraft). */
-export type Block = 'log' | 'leaves' | 'planks' | 'stone' | 'crate' | 'bench';
+export type Block = 'log' | 'leaves' | 'planks' | 'stone' | 'crate' | 'bench' | 'bench_ok' | 'cache' | 'brick';
 
 export interface Cell {
   ground: Ground;
@@ -20,7 +20,12 @@ export interface WorldObject {
   x: number; // case
   y: number;
   loot?: string; // table de butin (conteneurs)
+  lootItems?: [string, number][]; // butin imposé (caches de contrats, tiré à l'avance)
+  contractId?: string; // cache liée à un contrat du planning
 }
+
+/** Sortie de zone : rectangle de cases qui mène ailleurs. */
+export interface Exit { x0: number; y0: number; x1: number; y1: number; to: string; entry: { x: number; y: number }; label: string }
 
 export interface ZoneMap {
   id: string;
@@ -30,6 +35,7 @@ export interface ZoneMap {
   cells: Cell[]; // index = y * w + x
   spawn: { x: number; y: number };
   objects: WorldObject[];
+  exits: Exit[];
 }
 
 /** Blocs qui ne bloquent pas le passage (aucun pour l'instant, prévu pour les décors bas). */
@@ -125,5 +131,62 @@ export function buildRefuge(seed = 1): ZoneMap {
     { id: 'refuge:cabin-crate', kind: 'container', name: 'Vieille caisse', x: 15, y: 12, loot: 'cabin' },
     { id: 'refuge:bench', kind: 'bench', name: 'Établi cassé', x: 11, y: 12 }
   ];
-  return { id: 'refuge', name: 'Le refuge', w, h, cells, spawn, objects };
+  const exits: Exit[] = [{ x0: 26, y0: 31, x1: 28, y1: 31, to: 'garage', entry: { x: 27.5, y: 1.6 }, label: 'Garage de Riverside' }];
+  return { id: 'refuge', name: 'Le refuge', w, h, cells, spawn, objects, exits };
+}
+
+/** Emplacements des caches de contrats dans le garage (dedans d'abord, puis la cour). */
+export const GARAGE_CACHE_SLOTS: [number, number][] = [
+  [10, 9], [12, 9], [14, 9], [16, 9], [18, 9], [10, 17], [12, 17], [14, 17], [16, 17], [18, 17],
+  [4, 22], [6, 22], [8, 22], [10, 22], [12, 22], [4, 25], [6, 25], [8, 25], [10, 25], [12, 25]
+];
+
+export interface CacheSpec { contractId: string; title: string; loot: [string, number][] }
+
+/**
+ * Garage de Riverside (cahier 8.2, région 4) : la route continue depuis le refuge,
+ * un garage en briques ouvert côté route, une cour. Les caches des contrats terminés y sont posées.
+ */
+export function buildGarage(seed = 4, caches: CacheSpec[] = []): ZoneMap {
+  const w = 32, h = 32, rnd = mulberry32(seed);
+  const cells = blank(w, h);
+  const at = (x: number, y: number) => cells[y * w + x];
+  for (const c of cells) if (rnd() < 0.35) c.ground = 'grass2';
+  for (let y = 0; y < h; y++) { for (let x = 26; x <= 28; x++) at(x, y).ground = 'road'; at(25, y).ground = 'gravel'; at(29, y).ground = 'gravel'; }
+  // parking devant le garage
+  for (let y = 10; y <= 16; y++) for (let x = 21; x <= 24; x++) at(x, y).ground = 'road';
+  // bâtiment : sol béton, murs de briques (2 blocs), grande porte côté route
+  const x0 = 8, y0 = 7, x1 = 20, y1 = 19;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    at(x, y).ground = 'concrete';
+    if (x === x0 || x === x1 || y === y0 || y === y1) at(x, y).stack = ['brick', 'brick'];
+  }
+  for (let y = 11; y <= 15; y++) at(x1, y).stack = [];
+  // établis et étagères de l'atelier (décor) + deux conteneurs ordinaires
+  for (const x of [11, 13, 15]) at(x, 13).stack = ['crate'];
+  at(9, 13).stack = ['bench'];
+  // cour de stockage (gravier) au sud-ouest
+  for (let y = 21; y <= 27; y++) for (let x = 3; x <= 14; x++) at(x, y).ground = 'gravel';
+  // arbres en bordure ouest/nord (hors bâtiment et cour)
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < 7; x++) {
+    if (y >= 20 && y <= 28) continue;
+    if (rnd() < 0.25 && at(x, y).stack.length === 0) at(x, y).stack = rnd() < 0.4 ? ['log', 'log', 'leaves', 'leaves'] : ['log', 'leaves', 'leaves'];
+  }
+  const objects: WorldObject[] = [
+    { id: 'garage:toolbox', kind: 'container', name: 'Caisse à outils', x: 13, y: 13, loot: 'garage_box' },
+    { id: 'garage:locker', kind: 'container', name: 'Casier du mécanicien', x: 15, y: 13, loot: 'garage_locker' }
+  ];
+  caches.slice(0, GARAGE_CACHE_SLOTS.length).forEach((c, i) => {
+    const [x, y] = GARAGE_CACHE_SLOTS[i];
+    at(x, y).stack = ['cache'];
+    objects.push({ id: 'cache:' + c.contractId, kind: 'container', name: '📦 ' + c.title, x, y, lootItems: c.loot, contractId: c.contractId });
+  });
+  const exits: Exit[] = [{ x0: 26, y0: 0, x1: 28, y1: 0, to: 'refuge', entry: { x: 27.5, y: 30.4 }, label: 'Le refuge' }];
+  return { id: 'garage', name: 'Garage de Riverside', w, h, cells, spawn: { x: 27.5, y: 2 }, objects, exits };
+}
+
+/** Case de sortie sous le joueur, le cas échéant. */
+export function exitAt(map: ZoneMap, x: number, y: number): Exit | null {
+  const cx = Math.floor(x), cy = Math.floor(y);
+  return map.exits.find(e => cx >= e.x0 && cx <= e.x1 && cy >= e.y0 && cy <= e.y1) || null;
 }

@@ -15,7 +15,7 @@ export class Hud {
     top.className = 'hud-top';
     top.innerHTML = `
       <a class="hbtn back" href="../" title="Retour au planning">← Planning</a>
-      <div class="hud-title"><b>LAST OUTPOST</b><small>Le refuge</small></div>
+      <div class="hud-title"><b>LAST OUTPOST</b><small class="zone">Le refuge</small></div>
       <div class="bars">
         <div class="bar hp" title="Santé"><i></i><span>❤</span></div>
         <div class="bar st" title="Endurance"><i></i><span>⚡</span></div>
@@ -33,6 +33,8 @@ export class Hud {
     this.st = top.querySelector('.st i')!;
     this.load = top.querySelector('.load')!;
   }
+
+  setZone(name: string) { const z = document.querySelector('.hud-title .zone'); if (z) z.textContent = name; }
 
   update(p: PlayerState, weight = 0) {
     const P = GameConfig.player;

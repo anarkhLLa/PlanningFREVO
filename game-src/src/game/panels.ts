@@ -2,6 +2,8 @@ import { GameConfig } from '../core/config';
 import { itemDef } from '../core/items';
 import type { Inventory } from '../core/inventory';
 import { capsules, carried, pickupLimit, take, takeAll, put, type ContainerState, type GameState } from '../core/state';
+import { countOf } from '../core/inventory';
+import { GameConfig as GC } from '../core/config';
 import type { WorldObject } from '../core/map';
 import type { Contract } from '../core/economy';
 
@@ -15,12 +17,13 @@ export class Panels {
   private actBtn?: HTMLButtonElement;
   private toastEl: HTMLElement;
   private toastTimer = 0;
-  open: null | 'inventory' | 'container' | 'journal' = null;
+  open: null | 'inventory' | 'container' | 'journal' | 'bench' = null;
+  private benchDone = false;
   /** Mis à jour par la scène à chaque synchronisation avec le planning. */
   journal: { contracts: Contract[]; xp: number } = { contracts: [], xp: 0 };
   private cont: { obj: WorldObject; c: ContainerState } | null = null;
 
-  constructor(root: HTMLElement, private state: () => GameState, private changed: () => void, private onInteract: () => void, touch: boolean) {
+  constructor(root: HTMLElement, private state: () => GameState, private changed: () => void, private onInteract: () => void, touch: boolean, private onRepair: () => boolean = () => false) {
     this.prompt = el('div', 'prompt');
     this.modal = el('div', 'modal hidden');
     this.toastEl = el('div', 'gtoast');
@@ -54,7 +57,8 @@ export class Panels {
     if (!obj || this.open) { this.prompt.classList.remove('on'); this.actBtn?.classList.remove('on'); return; }
     const verb = obj.kind === 'container' ? (this.state().containers[obj.id]?.searched ? 'Ouvrir' : 'Fouiller') : 'Examiner';
     const key = this.actBtn ? '✋' : 'E';
-    this.prompt.innerHTML = `<b>${key}</b> ${verb} : ${obj.name}${progress > 0 ? `<i style="width:${Math.round(progress * 100)}%"></i>` : ''}`;
+    const name = obj.kind === 'bench' && obj.id === 'refuge:bench' && this.state().built.includes('refuge:bench') ? 'Établi' : obj.name;
+    this.prompt.innerHTML = `<b>${key}</b> ${verb} : ${name}${progress > 0 ? `<i style="width:${Math.round(progress * 100)}%"></i>` : ''}`;
     this.prompt.classList.add('on'); this.actBtn?.classList.add('on');
   }
 
@@ -80,6 +84,9 @@ export class Panels {
   toggleJournal() { if (this.open === 'journal') this.close(); else { this.open = 'journal'; this.render(); } }
 
   toggleInventory() { if (this.open === 'inventory') this.close(); else { this.open = 'inventory'; this.render(); } }
+  /** Conteneur actuellement ouvert (pour savoir si une cache vient d'être vidée). */
+  get openObject(): WorldObject | null { return this.cont?.obj ?? null; }
+  showBench(done: boolean) { this.benchDone = done; this.open = 'bench'; this.render(); }
   showContainer(obj: WorldObject, c: ContainerState) { this.cont = { obj, c }; this.open = 'container'; this.render(); }
   close() { this.open = null; this.cont = null; this.modal.classList.add('hidden'); this.modal.innerHTML = ''; }
 
@@ -90,6 +97,17 @@ export class Panels {
       <span class="cap-pill">🧢 ${capsules(s)} capsules</span><button class="mclose" data-a="close" aria-label="Fermer">✕</button></div>`;
     const weight = `<div class="weight${wt > max ? ' over' : ''}">Poids ${fmt(wt)} / ${max}${wt > max ? ` · surchargé (max ${pickupLimit()})` : ''}<i style="width:${Math.min(100, (wt / max) * 100)}%"></i></div>`;
     const equip = `<div class="equip">${[['Sac', s.equipment.bag ? '🎒 Petit sac' : '—'], ['Main', s.equipment.main ? `${itemDef(s.inventory.items.find(i => i.id === s.equipment.main)?.def ?? 'tool_basic').icon} Outil` : '—']].map(([k, v]) => `<span><small>${k}</small>${v}</span>`).join('')}</div>`;
+    if (this.open === 'bench') {
+      const cost = Object.entries(GC.build.bench);
+      const rows = cost.map(([d, q]) => { const have = countOf(s.inventory, d); return `<li class="${have >= q ? 'ok' : 'ko'}"><span>${itemDef(d).icon} ${itemDef(d).name}</span><b>${Math.min(have, q)} / ${q}</b></li>`; }).join('');
+      const can = cost.every(([d, q]) => countOf(s.inventory, d) >= q);
+      this.modal.innerHTML = `<div class="mbox"><div class="mhead"><b>🔧 ${this.benchDone ? 'Établi' : 'Établi cassé'}</b><button class="mclose" data-a="close" aria-label="Fermer">✕</button></div>
+        ${this.benchDone ? '<p>Il est réparé et solide. La fabrication arrivera avec l’étape « Construction et crafting ».</p>'
+        : `<p>Un établi abîmé. Avec un peu de bois et de ferraille, il redeviendra le cœur de ton atelier.</p><ul class="cost">${rows}</ul>
+           <button class="mbtn primary" data-a="repair"${can ? '' : ' disabled'}>${can ? 'Réparer l’établi' : 'Il manque des matériaux (caisse de départ, garage…)'}</button>`}</div>`;
+      this.modal.classList.remove('hidden');
+      return;
+    }
     if (this.open === 'journal') {
       const cs = this.journal.contracts;
       const by = (st: string[]) => cs.filter(c => st.includes(c.state));
@@ -122,6 +140,7 @@ export class Panels {
     if (!b) return;
     const s = this.state(), a = b.dataset.a;
     if (a === 'close') { this.close(); return; }
+    if (a === 'repair') { if (this.onRepair()) { this.benchDone = true; this.render(); } return; }
     if (!this.cont) return;
     if (a === 'takeall') {
       const r = takeAll(s, this.cont.c);
