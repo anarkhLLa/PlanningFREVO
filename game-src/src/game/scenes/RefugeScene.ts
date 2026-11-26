@@ -2,7 +2,11 @@ import Phaser from 'phaser';
 import { GameConfig } from '../../core/config';
 import { depthOf, toScreen } from '../../core/iso';
 import { buildRefuge, type ZoneMap } from '../../core/map';
-import { facing8, newPlayer, stepPlayer, type PlayerState } from '../../core/movement';
+import { facing8, stepPlayer, type PlayerState } from '../../core/movement';
+import type { WorldObject } from '../../core/map';
+import { findTarget, isOverloaded, newGame, openContainer, playerFromState, storePlayer, type GameState } from '../../core/state';
+import { Panels } from '../panels';
+import { AutoSave } from '../save';
 import { Controls } from '../input';
 import { Hud } from '../hud';
 import { blockKey, GROUND_VARIANTS, groundKey, makeTextures, playerFrame } from '../textures';
@@ -19,13 +23,21 @@ export class RefugeScene extends Phaser.Scene {
   private controls!: Controls;
   private hud!: Hud;
   private walkTime = 0;
+  private state!: GameState;
+  private panels!: Panels;
+  private autosave!: AutoSave;
+  private target: WorldObject | null = null;
+  private targetImg: Phaser.GameObjects.Image | null = null;
+  private search: { obj: WorldObject; start: number } | null = null; // horloge réelle (indépendante des FPS)
 
   constructor() { super('refuge'); }
 
   create() {
     makeTextures(this);
     this.map = buildRefuge(1);
-    this.player = newPlayer(this.map.spawn.x, this.map.spawn.y);
+    this.state = (this.registry.get('state') as GameState | null) ?? newGame(this.map);
+    if (this.state.zone !== this.map.id) this.state.zone = this.map.id;
+    this.player = playerFromState(this.state);
     this.drawMap();
 
     this.shadow = this.add.image(0, 0, 'shadow');
@@ -34,6 +46,10 @@ export class RefugeScene extends Phaser.Scene {
     const root = document.getElementById('hud')!;
     this.controls = new Controls(root);
     this.hud = new Hud(root, this);
+    this.autosave = new AutoSave(() => { storePlayer(this.state, this.player); return this.state; });
+    this.panels = new Panels(root, () => this.state, () => this.onStateChanged(), () => this.interact(), this.controls.touch);
+    this.input.keyboard?.on('keydown-E', () => this.interact());
+    this.autosave.soon(100); // première sauvegarde (nouvelle partie)
     this.setupCamera();
     this.syncPlayerSprite(0);
     // accès de débogage (tests automatiques, console)
@@ -91,8 +107,11 @@ export class RefugeScene extends Phaser.Scene {
 
   update(_t: number, deltaMs: number) {
     const dt = Math.min(0.05, deltaMs / 1000); // pas de « saut » après un onglet en arrière-plan
-    stepPlayer(this.player, this.controls.read(), this.map, dt);
+    const input = this.panels.open ? { sx: 0, sy: 0, run: false } : this.controls.read();
+    if (this.search && (input.sx || input.sy)) this.search = null; // bouger annule la fouille
+    stepPlayer(this.player, input, this.map, dt);
     this.syncPlayerSprite(dt);
+    this.updateTarget();
     this.updateOcclusion();
     this.hud.update(this.player);
   }
@@ -106,6 +125,46 @@ export class RefugeScene extends Phaser.Scene {
     this.playerImg.setTexture(f.key).setFlipX(f.flip).setPosition(s.x, s.y - bob);
     this.playerImg.setDepth(depthOf(p.x, p.y, 0.5));
     this.shadow.setPosition(s.x, s.y).setDepth(depthOf(p.x, p.y, 0.1));
+  }
+
+  /** Objet à portée : surligné + invite ; gère la progression de la fouille. */
+  private updateTarget() {
+    const t = this.panels.open ? null : findTarget(this.map, this.player.x, this.player.y, this.player.facing);
+    if (t !== this.target) {
+      this.targetImg?.clearTint();
+      this.target = t; this.search = null;
+      this.targetImg = t ? this.blocks.find(b => b.z === 0 && b.x === t.x + 0.5 && b.y === t.y + 0.5)?.img ?? null : null;
+      this.targetImg?.setTint(0xfff2b0);
+    }
+    if (this.search) {
+      const k = (performance.now() - this.search.start) / 1000 / GameConfig.interact.searchSeconds;
+      if (k >= 1) { const o = this.search.obj; this.search = null; this.openObject(o); }
+      else this.panels.setTarget(t, k);
+      return;
+    }
+    this.panels.setTarget(t);
+  }
+
+  /** Touche E / bouton ✋ : fouille (courte) la 1re fois, ouverture directe ensuite. */
+  interact() {
+    const t = this.target;
+    if (!t || this.panels.open || this.search) return;
+    if (t.kind === 'bench') { this.panels.toast('🔧 Établi cassé : tu pourras le réparer très bientôt.'); return; }
+    if (this.state.containers[t.id]?.searched) this.openObject(t);
+    else this.search = { obj: t, start: performance.now() };
+  }
+
+  private openObject(o: WorldObject) {
+    const c = openContainer(this.state, o);
+    this.onStateChanged();
+    this.panels.showContainer(o, c);
+  }
+
+  private onStateChanged() {
+    this.player.overloaded = isOverloaded(this.state);
+    this.panels.refreshBadge();
+    storePlayer(this.state, this.player);
+    this.autosave.soon();
   }
 
   /** Les blocs qui cachent le joueur deviennent transparents (cahier 2.4 / 9.5). */

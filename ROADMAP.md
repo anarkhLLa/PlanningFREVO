@@ -28,10 +28,12 @@ game/                build généré (ne pas modifier à la main)
 ```
 Commandes (dans `game-src/`) : `npm install`, `npm run dev`, `npm test`, `npm run build` (vérifie les types puis compile dans `../game`).
 Tous les réglages de gameplay : `game-src/src/core/config.ts`.
+Fichiers clés du core : `items.ts` (objets), `inventory.ts`, `ledger.ts` (capsules), `state.ts` (état de partie, butin, conteneurs, migrations), `map.ts` (cartes + objets interactifs). Côté client : `game/save.ts`, `game/panels.ts` (fenêtres HTML), `game/scenes/RefugeScene.ts`.
+Débogage : `window.__scene` (état, joueur) dans la console du navigateur.
 
 ## Étape 1 — Tranche verticale solo (en cours)
 - [x] **Session 1** : socle TS/Vite/Phaser, rendu iso 64×32 avec tri en profondeur, textures en blocs générées par le code, refuge 32×32 déterministe (cabane, route, forêt, caisses), survivant 8 directions, collisions, course + endurance, caméra qui suit, zoom (molette, pincement, boutons), transparence des blocs qui cachent le joueur, joystick + bouton course sur téléphone, bouton retour au planning, lien depuis le mode Maintenant, 10 tests.
-- [ ] **Session 2** : interaction (E / bouton tactile), fouille des conteneurs, inventaire simple (bois, ferraille, composants, capsules, outil, sac), caisse de départ, sauvegarde IndexedDB (position, inventaire, conteneurs) avec version de schéma.
+- [x] **Session 2** : interaction (E / bouton ✋, objet surligné, invite, fouille 0,9 s en temps réel), conteneurs au butin tiré une seule fois (graine = id du conteneur, jamais retiré), caisse de départ (10 bois, 5 ferraille, remise à niveau 1 fois/jour), inventaire 12 emplacements + poids (20, tolérance 10, surcharge = ralenti sans course), équipement (sac, outil), fenêtres inventaire (I) et conteneur (prendre / déposer / tout prendre), **registre des capsules append-only idempotent** (20 capsules de départ), sauvegarde IndexedDB + copie localStorage synchrone (la plus récente gagne), schéma v1 + `migrate()`, 19 tests.
 - [ ] **Session 3** : intégration planning — boîte d'envoi d'événements dans le planning (task.created/started/completed…, ids stables), adaptateur + inbox + registre append-only idempotent, moteur de récompenses (démarrage 3 min, fin, bonus rapide, enveloppe grosses tâches), contrat RUMOR → LOOT_AVAILABLE → LOOT_CLAIMED, solde de capsules et « nouveau à aller chercher » dans le planning, succès « Couché tôt, levé tôt ».
 - [ ] **Session 4** : zone du garage reliée par la route, cache du contrat à fouiller, mode construction (établi), synchro de la partie via le Gist, parcours complet du cahier des charges (partie 30, 17 points) testé de bout en bout.
 

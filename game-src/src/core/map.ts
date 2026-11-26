@@ -11,6 +11,17 @@ export interface Cell {
   stack: Block[];
 }
 
+export type ObjectKind = 'container' | 'bench';
+/** Objet interactif posé sur une case (conteneur, établi…). */
+export interface WorldObject {
+  id: string; // identifiant stable, ex. "refuge:starter"
+  kind: ObjectKind;
+  name: string;
+  x: number; // case
+  y: number;
+  loot?: string; // table de butin (conteneurs)
+}
+
 export interface ZoneMap {
   id: string;
   name: string;
@@ -18,6 +29,7 @@ export interface ZoneMap {
   h: number;
   cells: Cell[]; // index = y * w + x
   spawn: { x: number; y: number };
+  objects: WorldObject[];
 }
 
 /** Blocs qui ne bloquent pas le passage (aucun pour l'instant, prévu pour les décors bas). */
@@ -108,5 +120,10 @@ export function buildRefuge(seed = 1): ZoneMap {
     if (!reserved.has(y * w + x) && at(x, y).stack.length === 0) at(x, y).stack = ['stone'];
   }
 
-  return { id: 'refuge', name: 'Le refuge', w, h, cells, spawn };
+  const objects: WorldObject[] = [
+    { id: 'refuge:starter', kind: 'container', name: 'Caisse de départ', x: 19, y: 16, loot: 'starter' },
+    { id: 'refuge:cabin-crate', kind: 'container', name: 'Vieille caisse', x: 15, y: 12, loot: 'cabin' },
+    { id: 'refuge:bench', kind: 'bench', name: 'Établi cassé', x: 11, y: 12 }
+  ];
+  return { id: 'refuge', name: 'Le refuge', w, h, cells, spawn, objects };
 }

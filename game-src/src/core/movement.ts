@@ -11,6 +11,7 @@ export interface PlayerState {
   running: boolean;
   exhausted: boolean; // endurance vidée : course bloquée jusqu'au seuil
   moving: boolean;
+  overloaded: boolean; // calculé par la partie à partir du poids transporté
 }
 
 /** Intention envoyée par les contrôles (clavier, joystick… ou réseau plus tard). */
@@ -22,7 +23,7 @@ export interface MoveInput {
 
 export function newPlayer(x: number, y: number): PlayerState {
   const P = GameConfig.player;
-  return { x, y, facing: Math.PI / 4, health: P.maxHealth, stamina: P.maxStamina, running: false, exhausted: false, moving: false };
+  return { x, y, facing: Math.PI / 4, health: P.maxHealth, stamina: P.maxStamina, running: false, exhausted: false, moving: false, overloaded: false };
 }
 
 /** Le cercle du joueur touche-t-il une case solide ? */
@@ -51,13 +52,13 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
   // Endurance (cahier 9.2)
   if (p.stamina <= 0) p.exhausted = true;
   if (p.exhausted && p.stamina >= P.runMinStamina) p.exhausted = false;
-  p.running = p.moving && input.run && !p.exhausted && p.stamina > 0;
+  p.running = p.moving && input.run && !p.exhausted && p.stamina > 0 && !p.overloaded;
   if (p.running) p.stamina = Math.max(0, p.stamina - P.runCost * dt);
   else p.stamina = Math.min(P.maxStamina, p.stamina + P.staminaRegen * dt);
 
   if (!p.moving) return;
   p.facing = Math.atan2(dir.y, dir.x);
-  const speed = (p.running ? P.runSpeed : P.walkSpeed) * strength;
+  const speed = (p.running ? P.runSpeed : P.walkSpeed) * strength * (p.overloaded ? GameConfig.inventory.overloadSpeed : 1);
   // Déplacement axe par axe : on glisse le long des murs au lieu de se bloquer.
   // Sous-pas pour ne jamais traverser un mur fin, même à faible FPS.
   const steps = Math.max(1, Math.ceil((speed * dt) / 0.2));

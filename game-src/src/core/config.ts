@@ -34,6 +34,25 @@ export const GameConfig = {
     followLerp: 0.12
   },
 
+  inventory: {
+    slots: 12, // petit sac
+    maxWeight: 20, // capacité normale (cahier 10.2)
+    overloadTolerance: 10, // au-delà de maxWeight : ralenti, pas de course ; au-delà de max+tolérance : impossible de ramasser
+    overloadSpeed: 0.65
+  },
+
+  interact: {
+    range: 1.7, // distance max (cases) entre le joueur et le centre de l'objet
+    searchSeconds: 0.9 // durée de la fouille (petite attente satisfaisante, pas punitive)
+  },
+
+  /** Ressources de départ (cahier 13.4). */
+  start: {
+    capsules: 20,
+    starterCrate: { wood: 10, scrap: 5 }, // la caisse de départ se remet à niveau une fois par jour
+    starterRefillDaily: true
+  },
+
   /** Distance (en cases) à laquelle les blocs devant le joueur deviennent transparents. */
   occlusionRange: 3,
   occlusionAlpha: 0.3
