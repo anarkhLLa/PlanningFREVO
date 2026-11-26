@@ -4,7 +4,7 @@ import { depthOf, toScreen } from '../../core/iso';
 import { buildRefuge, type ZoneMap } from '../../core/map';
 import { facing8, stepPlayer, type PlayerState } from '../../core/movement';
 import type { WorldObject } from '../../core/map';
-import { findTarget, isOverloaded, newGame, openContainer, playerFromState, storePlayer, type GameState } from '../../core/state';
+import { carried, findTarget, isOverloaded, newGame, openContainer, playerFromState, storePlayer, type GameState } from '../../core/state';
 import { Panels } from '../panels';
 import { AutoSave } from '../save';
 import { Controls } from '../input';
@@ -113,7 +113,7 @@ export class RefugeScene extends Phaser.Scene {
     this.syncPlayerSprite(dt);
     this.updateTarget();
     this.updateOcclusion();
-    this.hud.update(this.player);
+    this.hud.update(this.player, carried(this.state));
   }
 
   private syncPlayerSprite(dt: number) {
@@ -161,7 +161,9 @@ export class RefugeScene extends Phaser.Scene {
   }
 
   private onStateChanged() {
+    const was = this.player.overloaded;
     this.player.overloaded = isOverloaded(this.state);
+    if (this.player.overloaded && !was) this.panels.toast('🎒 Trop lourd : tu avances moins vite et tu ne peux plus courir. Dépose des objets dans une caisse.');
     this.panels.refreshBadge();
     storePlayer(this.state, this.player);
     this.autosave.soon();

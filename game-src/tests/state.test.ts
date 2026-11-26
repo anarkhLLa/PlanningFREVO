@@ -26,9 +26,9 @@ describe('registre économique', () => {
 
 describe('inventaire', () => {
   it('respecte les piles, les emplacements et le poids', () => {
-    const inv = newInventory(2, 20);
-    expect(addItem(inv, 'wood', 70)).toBe(20); // limité par le poids
-    expect(weightOf(inv)).toBe(20);
+    const inv = newInventory(2, 10);
+    expect(addItem(inv, 'wood', 70)).toBe(20); // 20 × 0,5 = 10 : limité par le poids
+    expect(weightOf(inv)).toBe(10);
     const big = newInventory(2, 0);
     expect(addItem(big, 'wood', 130)).toBe(100); // 2 piles de 50
   });
@@ -54,7 +54,7 @@ describe('conteneurs', () => {
   it('on ne peut pas dépasser la limite de ramassage ; la surcharge ralentit', () => {
     const s = newGame(map, T0);
     const c = openContainer(s, obj('refuge:starter'), T0);
-    addItem(c.items, 'scrap', 40);
+    addItem(c.items, 'scrap', 50);
     takeAll(s, c);
     expect(weightOf(s.inventory)).toBeLessThanOrEqual(pickupLimit() + 1e-9);
     expect(isOverloaded(s)).toBe(true);
