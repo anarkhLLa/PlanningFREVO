@@ -17,6 +17,21 @@ App de planning très simple (PWA : s'installe sur l'écran d'accueil, marche ho
 - **Notifications** (Réglages → Activer) : résumé des tâches du jour, en retard, des colis attendus et des besoins non remplis.
 - **Sauvegarde** : données stockées sur le téléphone, export/import d'un fichier JSON dans Réglages.
 
+## Mode « Maintenant » (exécution)
+Premier onglet. Tu indiques ton énergie en un geste (🪫 basse, 🔋 moyenne, ⚡ haute) et éventuellement ton temps dispo : l'app propose **une** carte, tirée d'un paquet limité de 5 (pas de défilement infini).
+- Glisser à droite / « Je commence » : la tâche démarre (+5 XP). Glisser à gauche / « Plus tard » : elle revient demain, sans retard. « Autre proposition » : 3 changements maximum, pour ne pas transformer le choix en procrastination.
+- « C'est fait » : +20 XP (bonus si énergie haute ou si la tâche pèse). Une tâche étalée avance d'une journée.
+- Prochaine action : chaque carte affiche (ou demande) la toute prochaine action concrète.
+- 🧭 « Je suis bloqué » : une seule action de moins de 3 minutes, sans choisir de projet.
+- Capture en une phrase (ou dictée 🎤), sans date ni catégorie.
+- Missions du jour (3), stables dans la journée. Une mission non faite revient le lendemain, avant les autres, sans rouge ; on peut la passer une fois.
+- Atelier qui s'agrandit avec l'XP (jamais de dégradation), progression du jour, « ça avance », résumé positif depuis la dernière visite.
+- Sons, vibrations et animations réservés aux vrais progrès, désactivables dans Réglages.
+
+**Revue rapide** : une tâche à la fois, boutons qui changent à chaque appui (énergie, durée, ressenti, importance, échéance réelle / simple intention, jour), prochaine action, état en un geste. Filtres « Sans énergie » et « Inactives (14 j) » avec une seule décision : garder, demain, abandonner.
+
+**Planification souple** : seule une tâche marquée « 📌 Échéance réelle » passe en retard (rouge). Une simple intention non faite devient « À REPRENDRE », sans alarme.
+
 ## Apparence
 Thème « verre » sombre (panneaux translucides sur fond dégradé ou fond d'écran). Seules couleurs : l'importance (trait à gauche de chaque tâche, réglable) et la couleur du nom de chaque jour.
 

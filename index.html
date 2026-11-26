@@ -450,6 +450,7 @@ option{background:#2d2e4c;color:#fff}
   .day{min-height:200px}
 }
 </style>
+<link rel="stylesheet" href="focus.css">
 </head>
 <body>
 <header>
@@ -458,6 +459,7 @@ option{background:#2d2e4c;color:#fff}
 </header>
 <main id="main"></main>
 <nav id="tabs">
+  <button data-act="view" data-view="now"><i>⚡</i>Maintenant</button>
   <button data-act="view" data-view="planning"><i>📅</i>Planning</button>
   <button data-act="view" data-view="tasks"><i>☰</i>Tâches</button>
   <button data-act="view" data-view="needs"><i>🛒</i>Besoins<span class="count" id="needCount" hidden></span></button>
@@ -469,6 +471,7 @@ option{background:#2d2e4c;color:#fff}
 <div id="wall"></div>
 
 <script src="logic.js"></script>
+<script src="focus.js"></script>
 <script>
 'use strict';
 /* ---------- utilitaires ---------- */
@@ -544,13 +547,13 @@ const MAX_DAYS = 14;
              slots: [{ d: 'AAAA-MM-JJ' | null, ok: bool, o: ordre }],   // un slot = une journée de travail
              needs: [{ id, text, ok }] }                                  // besoins (achats, matériel…) */
 function defaults() {
-  return { tasks: [], waits: [], cats: JSON.parse(JSON.stringify(DEFAULT_CATS)), colors: JSON.parse(JSON.stringify(DEFAULT_COLORS)), look: { ...DEFAULT_LOOK }, tomb: {}, metaU: {}, settings: { weeks: 2, offset: 0, view: 'planning', filter: 'active', cat: '', needsF: 'todo', needsBy: 'task', trayOpen: true, waitsOpen: false, theme: 'auto' } };
+  return { tasks: [], waits: [], cats: JSON.parse(JSON.stringify(DEFAULT_CATS)), colors: JSON.parse(JSON.stringify(DEFAULT_COLORS)), look: { ...DEFAULT_LOOK }, tomb: {}, metaU: {}, events: [], missions: null, settings: { fx: {}, focus: {}, weeks: 2, offset: 0, view: 'now', filter: 'active', cat: '', needsF: 'todo', needsBy: 'task', trayOpen: true, waitsOpen: false, theme: 'auto' } };
 }
 function load() {
   const d = defaults();
   try {
     const x = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (x) { d.tasks = x.tasks || []; d.waits = x.waits || []; d.tomb = x.tomb || {}; d.metaU = x.metaU || {}; Object.assign(d.settings, x.settings || {}); if (x.cats) for (const [k] of CAT_KINDS) if (Array.isArray(x.cats[k])) d.cats[k] = x.cats[k]; mergeColors(d, x.colors); mergeLook(d, x.look);
+    if (x) { d.tasks = x.tasks || []; d.waits = x.waits || []; d.tomb = x.tomb || {}; d.metaU = x.metaU || {}; d.events = Array.isArray(x.events) ? x.events : []; d.missions = x.missions || null; Object.assign(d.settings, x.settings || {}); if (x.cats) for (const [k] of CAT_KINDS) if (Array.isArray(x.cats[k])) d.cats[k] = x.cats[k]; mergeColors(d, x.colors); mergeLook(d, x.look);
       // ancienne palette par défaut -> nouvelle palette harmonisée (une seule fois)
       if (JSON.stringify(d.colors.palette) === JSON.stringify(TASK_COLORS_OLD)) {
         d.colors.palette = TASK_COLORS_DEFAULT.slice();
@@ -645,7 +648,8 @@ function save(fromSync) {
 const find = id => S.tasks.find(t => t.id === id);
 const isActive = t => t.status === 'todo' || t.status === 'blocked';
 const slotLate = s => s.d && s.d < today() && !s.ok;
-const isLate = t => isActive(t) && t.slots.some(slotLate);
+const isLate = t => isActive(t) && t.hard && t.slots.some(slotLate);
+const isCarry = t => isActive(t) && !t.hard && t.slots.some(slotLate);
 const firstDate = t => { const ds = t.slots.filter(s => s.d && !s.ok).map(s => s.d).sort(); return ds[0] || t.slots.map(s => s.d).filter(Boolean).sort()[0] || '9'; };
 const byPrio = (a, b) => PRIO_RANK[a.prio] - PRIO_RANK[b.prio] || firstDate(a).localeCompare(firstDate(b)) || a.created - b.created;
 const waitFor = t => t.block && t.block.waitId ? S.waits.find(w => w.id === t.block.waitId) : null;
@@ -680,11 +684,12 @@ function render(keepScroll = true) {
   else document.documentElement.dataset.theme = S.settings.theme;
   const v = S.settings.view;
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
-  $('#fab').style.display = v === 'settings' || v === 'needs' ? 'none' : '';
+  $('#fab').style.display = ['settings', 'needs', 'now', 'review'].includes(v) ? 'none' : '';
+  $$('#tabs button').forEach(b => { if (v === 'review' && b.dataset.view === 'now') b.classList.add('on'); });
   const nn = S.tasks.filter(isActive).reduce((k, t) => k + unmet(t).length, 0);
   const nc = $('#needCount'); nc.hidden = !nn; nc.textContent = nn;
   renderWaits();
-  if (v === 'planning') renderPlanning(); else if (v === 'tasks') renderTasks(); else if (v === 'needs') renderNeeds(); else renderSettings();
+  if (v === 'now') renderNow(); else if (v === 'review') renderReview(); else if (v === 'planning') renderPlanning(); else if (v === 'tasks') renderTasks(); else if (v === 'needs') renderNeeds(); else renderSettings();
   if (keepScroll) { main.scrollTop = st; if (bl != null && $('.board')) $('.board').scrollLeft = bl; }
 }
 
@@ -693,10 +698,12 @@ function chip(t, o = {}) {
   const s = o.slot != null ? t.slots[o.slot] : null, n = t.slots.length;
   const done = t.status === 'done' || (s && s.ok && !o.tray);
   const cls = done ? 'c-done' : t.status === 'blocked' ? 'c-blocked' : t.status === 'cancelled' ? 'c-cancel' : 'rc';
-  const late = o.full ? isLate(t) : (s && !o.tray && isActive(t) && slotLate(s));
+  const late = o.full ? isLate(t) : (s && !o.tray && isActive(t) && t.hard && slotLate(s));
+  const carry = o.full ? isCarry(t) : (s && !o.tray && isActive(t) && !t.hard && slotLate(s));
   let tag = '';
   if (n > 1 && s && !o.tray && s.d) tag += `<span class="badge">j${slotRank(t, o.slot)}/${n}</span>`;
   if (o.tray && n > 1) tag += `<span class="badge">×${unplaced(t)}</span>`;
+  if (t.energy && isActive(t)) tag += `<span class="badge">${EN_ICON[t.energy]}</span>`;
   const nu = unmet(t).length;
   if (nu && isActive(t)) tag += `<span class="badge">🛒${nu}</span>`;
   let sub = '';
@@ -706,11 +713,12 @@ function chip(t, o = {}) {
   }
   if (late && !o.full) sub += `<span class="t-sub"><span class="late-tag">EN RETARD</span>${fmtRel(s.d)}</span>`;
   if (late && o.full) sub += `<span class="t-sub"><span class="late-tag">EN RETARD</span></span>`;
+  if (carry) sub += `<span class="t-sub"><span class="carry-tag">À REPRENDRE</span></span>`;
   let meta = '';
   if (o.full) {
     meta = `<span class="meta">${esc(catLabel(t.cat))} · ${whenText(t)}</span>`;
   }
-  return `<div class="task ${cls}${late ? ' late' : ''}" data-id="${t.id}" data-slot="${o.slot ?? ''}" data-p="${t.prio}" style="--tc:${t.color || '#475569'};--tt:${txt(t.color || '#475569')}"><i class="psq" data-p="${t.prio}" title="Importance"></i><span class="t-title">${esc(t.title)}</span>${tag}${sub}${meta}</div>`;
+  return `<div class="task ${cls}${late ? ' late' : ''}${carry ? ' carry' : ''}" data-id="${t.id}" data-slot="${o.slot ?? ''}" data-p="${t.prio}" style="--tc:${t.color || '#475569'};--tt:${txt(t.color || '#475569')}"><i class="psq" data-p="${t.prio}" title="Importance"></i><span class="t-title">${esc(t.title)}</span>${tag}${sub}${meta}</div>`;
 }
 
 function renderPlanning() {
@@ -725,8 +733,9 @@ function renderPlanning() {
     <p>Tu as un fichier de sauvegarde (planning-….json) ? Touche le bouton et choisis-le.</p>
     <label class="btn primary" style="display:inline-block">📥 Importer ma sauvegarde<input type="file" id="importFile" accept="application/json,.json,text/plain,*/*" hidden></label>
     <p style="margin-top:10px">Sinon, touche <b>+</b> en bas à droite pour créer ta première tâche.</p></div>`;
-  const nl = S.tasks.filter(isActive).reduce((k, x) => k + x.slots.filter(slotLate).length, 0);
-  if (nl) h += `<div class="banner"><span>⚠ ${nl} tâche${nl > 1 ? 's' : ''} en retard</span><button class="btn sm" data-act="late-today">Tout mettre à aujourd'hui</button></div>`;
+  const nl = S.tasks.filter(isLate).length, nc = S.tasks.filter(isCarry).length;
+  if (nl) h += `<div class="banner"><span>📌 ${nl} échéance${nl > 1 ? 's' : ''} dépassée${nl > 1 ? 's' : ''}</span><button class="btn sm" data-act="late-today">Tout mettre à aujourd'hui</button></div>`;
+  else if (nc) h += `<div class="banner soft"><span>🔁 ${nc} tâche${nc > 1 ? 's' : ''} à reprendre</span><button class="btn sm" data-act="late-today">Les remettre à aujourd'hui</button></div>`;
   const unpl = S.tasks.filter(x => isActive(x) && unplaced(x)).sort(byPrio);
   const nu = unpl.reduce((k, x) => k + unplaced(x), 0);
   h += `<section class="tray" data-drop="none"><div class="tray-h" data-act="tray"><b>À planifier (${nu})</b><span>${S.settings.trayOpen ? '▾' : '▸'}</span></div>`;
@@ -762,13 +771,15 @@ function renderTasks() {
   $('#main').innerHTML = `
     <div class="chips">${FILTERS.map(([k, l]) => `<button class="chip${f === k ? ' on' : ''}" data-act="filter" data-v="${k}">${l}<span class="n">${count(k)}</span></button>`).join('')}</div>
     <div class="chips">${['', ...S.cats.task, ...(hasNone ? ['__none'] : [])].map(k => `<button class="chip${c === k ? ' on' : ''}" data-act="cat" data-v="${esc(k)}">${k === '__none' ? NOCAT : esc(k) || 'Toutes catégories'}</button>`).join('')}</div>
+    <div class="chips">${[['', 'Toutes énergies'], ...ENERGY.map(([k, ic, l]) => [k, ic + ' ' + l]), ['none', '❔ Non classées']].map(([k, l]) => `<button class="chip${(S.settings.en || '') === k ? ' on' : ''}" data-act="en-f" data-v="${k}">${l}</button>`).join('')}</div>
     <div class="search"><input id="q" type="search" placeholder="Rechercher…" value="${esc(ui.q)}"></div>
     <div id="taskList">${listHTML()}</div>`;
 }
 function catMatch(t, c) { return !c || (c === '__none' ? !t.cat : t.cat === c); }
 function listHTML() {
   const f = S.settings.filter, c = S.settings.cat, q = ui.q.trim().toLowerCase();
-  const all = S.tasks.filter(t => catMatch(t, c) && (!q || [t.title, t.note, ...t.needs.map(n => n.text)].join(' ').toLowerCase().includes(q)));
+  const en = S.settings.en || '';
+  const all = S.tasks.filter(t => catMatch(t, c) && (!en || (en === 'none' ? !t.energy : t.energy === en)) && (!q || [t.title, t.note, ...t.needs.map(n => n.text)].join(' ').toLowerCase().includes(q)));
   const byDate = (a, b) => firstDate(a).localeCompare(firstDate(b)) || a.created - b.created;
   const groups = [];
   if (f === 'active' || f === 'all') for (const [k, l] of PRIOS) groups.push([l, `var(--pr-${k})`, all.filter(t => t.status === 'todo' && t.prio === k).sort(byDate)]);
@@ -854,6 +865,7 @@ function renderSettings() {
     <label class="btn primary">📥 Importer une sauvegarde<input type="file" id="importFile" accept="application/json,.json,text/plain,*/*" hidden></label>
     <button class="btn" data-act="export">📤 Exporter</button>
     <button class="btn danger" data-act="purge">Effacer terminées et barrées</button></div>` + syncCardHTML() + `
+  ${focusSettingsHTML()}
   <div class="card"><h3>🔔 Notifications</h3>
     <p>Une notification résume en permanence les tâches du jour, celles en retard, les colis attendus et les besoins à obtenir. Elle se met à jour à chaque ouverture de l'app et à chaque changement.<br><b>${permTxt}</b></p>
     <button class="btn primary" data-act="notif-on">Activer</button><button class="btn" data-act="notif-test">Tester</button>
@@ -936,6 +948,7 @@ function openTask(id, slot, keep) {
       : B('block', '⏳ Bloquer — en attente de…', 'violet full')}
     <h4>Importance</h4>
     <div class="prio-pick">${PRIOS.map(([k, l]) => `<label><button class="p-${k}${t.prio === k ? ' on' : ''}" data-act="prio" data-v="${k}" aria-label="${l}"></button>${l}</label>`).join('')}</div>
+    ${execSheetHTML(t)}
     <div class="grid2" style="margin-top:16px">${B('edit', '✎ Modifier')}${B('del', '🗑 Supprimer', 'danger')}</div>`, keep);
 }
 
@@ -1052,10 +1065,11 @@ function hslHex(h, s, l) {
   return '#' + f(0) + f(8) + f(4);
 }
 function commit(msg, undo) { save(); render(); if (msg) toast(msg, undo); }
-function snapshot() { const snap = JSON.stringify({ tasks: S.tasks, waits: S.waits, cats: S.cats, colors: S.colors, look: S.look }); return () => { const x = JSON.parse(snap); S.tasks = x.tasks; S.waits = x.waits; S.cats = x.cats; S.colors = x.colors; S.look = x.look; closeSheet(); commit(); }; }
+function snapshot() { const snap = JSON.stringify({ tasks: S.tasks, waits: S.waits, cats: S.cats, colors: S.colors, look: S.look, events: S.events, missions: S.missions, focus: S.settings.focus }); return () => { const x = JSON.parse(snap); S.tasks = x.tasks; S.waits = x.waits; S.cats = x.cats; S.colors = x.colors; S.look = x.look; S.events = x.events; S.missions = x.missions; S.settings.focus = x.focus; closeSheet(); commit(); }; }
 function refreshSheet() { if (ui.cur && !$('#sheet').classList.contains('hidden') && $('#daysSel')) openTask(ui.cur, ui.slot, true); }
 
 function act(a, el, e) {
+  if (a.startsWith('f-')) { focusAct(a, el, e); return; }
   const t = ui.cur && find(ui.cur);
   switch (a) {
     case 'view': S.settings.view = el.dataset.view; S.settings.waitsOpen = false; save(); closeSheet(); render(false); $('#main').scrollTop = 0; if (el.dataset.view === 'planning') scrollToToday(); return;
@@ -1079,7 +1093,7 @@ function act(a, el, e) {
       const w = S.waits.find(x => x.id === el.dataset.id); if (!w) return;
       const u = snapshot(); const task = w.taskId && find(w.taskId);
       S.waits = S.waits.filter(x => x !== w);
-      if (task && task.status === 'blocked') { task.status = 'todo'; task.block = null; commit(`Reçu ! « ${task.title} » est débloquée`, u); }
+      if (task && task.status === 'blocked') { task.status = 'todo'; task.block = null; const xp = rewardManual('unblock', task); commit(`Reçu ! « ${task.title} » est débloquée`, u); celebrate(xp); }
       else commit(`« ${w.title} » reçu`, u);
       return;
     }
@@ -1088,10 +1102,11 @@ function act(a, el, e) {
       const tk = find(el.dataset.tid); if (!tk) return;
       const u = snapshot();
       if (a === 'need-del') { tk.needs = tk.needs.filter(x => x.id !== el.dataset.nid); commit('Besoin supprimé', u); }
-      else { const nd = tk.needs.find(x => x.id === el.dataset.nid); if (!nd) return; nd.ok = !nd.ok; commit(nd.ok ? `Obtenu : ${nd.text}` : `À obtenir : ${nd.text}`, u); }
+      else { const nd = tk.needs.find(x => x.id === el.dataset.nid); if (!nd) return; nd.ok = !nd.ok; const xp = nd.ok ? rewardManual('need', tk) : 0; commit(nd.ok ? `Obtenu : ${nd.text}` : `À obtenir : ${nd.text}`, u); celebrate(xp); }
       refreshSheet(); return;
     }
     case 'needsF': S.settings.needsF = el.dataset.v; save(); render(false); return;
+    case 'en-f': S.settings.en = el.dataset.v; save(); render(false); return;
     case 'needsBy': S.settings.needsBy = el.dataset.v; save(); render(false); return;
     case 'w-edit': { const w = S.waits.find(x => x.id === el.dataset.id); if (w) openWaitForm(w); return; }
     case 'need-edit': { const tk = find(el.dataset.tid), nd = tk && tk.needs.find(x => x.id === el.dataset.nid); if (nd) openNeedForm(tk, nd); return; }
@@ -1130,11 +1145,11 @@ function act(a, el, e) {
   switch (a) {
     case 'slot-ok': {
       s.ok = !s.ok;
-      if (t.slots.every(x => x.ok)) { setStatus(t, 'done'); closeSheet(); commit('Dernier jour fait : tâche terminée ✓', u); }
-      else { commit(s.ok ? `Journée faite (${t.slots.filter(x => x.ok).length}/${t.slots.length})` : 'Journée à refaire', u); refreshSheet(); }
+      if (t.slots.every(x => x.ok)) { const xp = rewardManual('done', t); setStatus(t, 'done'); closeSheet(); commit('Dernier jour fait : tâche terminée ✓', u); celebrate(xp, true); }
+      else { const xp = s.ok ? rewardManual('slot', t) : 0; commit(s.ok ? `Journée faite (${t.slots.filter(x => x.ok).length}/${t.slots.length})` : 'Journée à refaire', u); celebrate(xp); refreshSheet(); }
       break;
     }
-    case 'done': setStatus(t, 'done'); closeSheet(); commit('Terminée ✓', u); break;
+    case 'done': { const xp = rewardManual('done', t); setStatus(t, 'done'); closeSheet(); commit('Terminée ✓', u); celebrate(xp, true); break; }
     case 'cancel': setStatus(t, 'cancelled'); closeSheet(); commit('Tâche barrée', u); break;
     case 'reopen': setStatus(t, 'todo'); closeSheet(); commit('Tâche rouverte', u); break;
     case 'to-today': if (moveSlot(t, i, today())) { closeSheet(); commit("Reportée à aujourd'hui", u); } break;
@@ -1164,6 +1179,7 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target, fd = new FormData(f);
+  if (focusSubmit(f, fd)) return;
   if (f.id === 'taskForm') {
     const title = (fd.get('title') || '').trim(); if (!title) return;
     const data = { title, cat: fd.get('cat') || '', prio: fd.get('prio') || 'yellow', note: (fd.get('note') || '').trim() };
@@ -1371,7 +1387,7 @@ mainEl.addEventListener('contextmenu', e => { if (e.target.closest('.task')) e.p
 
 /* ---------- sauvegarde fichier ---------- */
 function exportData() {
-  const blob = new Blob([JSON.stringify({ app: 'planning', v: 5, tasks: S.tasks, waits: S.waits, cats: S.cats, colors: S.colors, look: S.look }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'planning', v: 6, tasks: S.tasks, waits: S.waits, cats: S.cats, colors: S.colors, look: S.look, events: S.events, missions: S.missions }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `planning-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -1382,7 +1398,7 @@ function importData(file) {
     if (!Array.isArray(x.tasks)) throw new Error('format');
     if (!confirm(`Remplacer les données actuelles par ce fichier (${x.tasks.length} tâches) ?`)) return;
     const u = snapshot(); const m = PlanningLogic.migrate({ tasks: x.tasks, waits: x.waits || [] });
-    S.tasks = m.tasks; S.waits = m.waits; if (x.cats) for (const [k] of CAT_KINDS) if (Array.isArray(x.cats[k])) S.cats[k] = x.cats[k]; mergeColors(S, x.colors); mergeLook(S, x.look); fixCats(S); commit('Import terminé', u);
+    S.tasks = m.tasks; S.waits = m.waits; if (Array.isArray(x.events)) S.events = x.events; if (x.missions) S.missions = x.missions; if (x.cats) for (const [k] of CAT_KINDS) if (Array.isArray(x.cats[k])) S.cats[k] = x.cats[k]; mergeColors(S, x.colors); mergeLook(S, x.look); fixCats(S); commit('Import terminé', u);
   }).catch(() => toast('Fichier invalide'));
 }
 
@@ -1448,27 +1464,27 @@ const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY));
 let syncBase = null, syncing = false, syncAgain = false, syncTimer = null, syncStatus = SY.token ? 'idle' : 'off', syncErr = '';
 const strip = x => { const { u, ...r } = x; return JSON.stringify(r); };
 function syncSnapshot() {
-  syncBase = { t: new Map(S.tasks.map(x => [x.id, strip(x)])), w: new Map(S.waits.map(x => [x.id, strip(x)])),
-    m: { cats: JSON.stringify(S.cats), colors: JSON.stringify(S.colors), look: JSON.stringify(S.look) } };
+  syncBase = { t: new Map(S.tasks.map(x => [x.id, strip(x)])), w: new Map(S.waits.map(x => [x.id, strip(x)])), e: new Map(S.events.map(x => [x.id, strip(x)])),
+    m: { cats: JSON.stringify(S.cats), colors: JSON.stringify(S.colors), look: JSON.stringify(S.look), missions: JSON.stringify(S.missions) } };
 }
 // repère ce qui a changé depuis la dernière fois et le date
 function stamp() {
   if (!syncBase) { syncSnapshot(); return false; }
   const now = Date.now(); let changed = false;
-  for (const [list, key] of [[S.tasks, 't'], [S.waits, 'w']]) {
+  for (const [list, key] of [[S.tasks, 't'], [S.waits, 'w'], [S.events, 'e']]) {
     const seen = new Set();
     for (const x of list) { seen.add(x.id); if (syncBase[key].get(x.id) !== strip(x)) { x.u = now; changed = true; } }
     for (const id of syncBase[key].keys()) if (!seen.has(id)) { S.tomb[id] = now; changed = true; }
   }
-  for (const k of ['cats', 'colors', 'look']) if (JSON.stringify(S[k]) !== syncBase.m[k]) { S.metaU[k] = now; changed = true; }
+  for (const k of ['cats', 'colors', 'look', 'missions']) if (JSON.stringify(S[k]) !== syncBase.m[k]) { S.metaU[k] = now; changed = true; }
   syncSnapshot();
   return changed;
 }
-function syncDoc() { return { v: 1, tasks: S.tasks, waits: S.waits, tomb: S.tomb, cats: S.cats, colors: S.colors, look: S.look, metaU: S.metaU }; }
+function syncDoc() { return { v: 1, tasks: S.tasks, waits: S.waits, events: S.events, tomb: S.tomb, cats: S.cats, colors: S.colors, look: S.look, missions: S.missions, metaU: S.metaU }; }
 function canon(d) {
   const byId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   const tomb = {}; Object.keys(d.tomb || {}).sort().forEach(k => tomb[k] = d.tomb[k]);
-  return JSON.stringify({ tasks: (d.tasks || []).slice().sort(byId), waits: (d.waits || []).slice().sort(byId), tomb, cats: d.cats, colors: d.colors, look: d.look, metaU: d.metaU || {} });
+  return JSON.stringify({ tasks: (d.tasks || []).slice().sort(byId), waits: (d.waits || []).slice().sort(byId), events: (d.events || []).slice().sort(byId), tomb, cats: d.cats, colors: d.colors, look: d.look, missions: d.missions || null, metaU: d.metaU || {} });
 }
 function mergeDocs(a, b) {
   if (!b) return a;
@@ -1482,10 +1498,10 @@ function mergeDocs(a, b) {
     for (const x of la || []) { const y = m.get(x.id); if (!y || (x.u || 0) >= (y.u || 0)) m.set(x.id, x); }
     return [...m.values()].filter(x => !(tomb[x.id] && tomb[x.id] >= (x.u || 0)));
   };
-  const out = { v: 1, tasks: list(a.tasks, b.tasks), waits: list(a.waits, b.waits), tomb, metaU: { ...(a.metaU || {}) } };
-  for (const k of ['cats', 'colors', 'look']) {
+  const out = { v: 1, tasks: list(a.tasks, b.tasks), waits: list(a.waits, b.waits), events: list(a.events, b.events), tomb, metaU: { ...(a.metaU || {}) } };
+  for (const k of ['cats', 'colors', 'look', 'missions']) {
     const ra = (a.metaU || {})[k] || 0, rb = (b.metaU || {})[k] || 0;
-    if (b[k] && rb > ra) { out[k] = b[k]; out.metaU[k] = rb; } else out[k] = a[k];
+    if (b[k] !== undefined && rb > ra) { out[k] = b[k]; out.metaU[k] = rb; } else out[k] = a[k] === undefined ? null : a[k];
   }
   return out;
 }
@@ -1544,7 +1560,7 @@ async function syncNow() {
       if (drag || pending) syncAgain = true;
       else {
         S.tasks = fin.tasks; S.waits = fin.waits; S.tomb = fin.tomb; S.metaU = fin.metaU;
-        S.cats = fin.cats; S.colors = fin.colors; S.look = fin.look;
+        S.cats = fin.cats; S.colors = fin.colors; S.look = fin.look; S.events = fin.events || []; S.missions = fin.missions || null;
         PlanningLogic.migrate(S); fixCats(S); syncSnapshot(); save(true); render();
       }
     }
@@ -1596,6 +1612,7 @@ setInterval(tick, 60e3);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); notify(false); queueSync(0); } });
 render(false);
 if (S.settings.view === 'planning') scrollToToday();
+ui.seenAt = seenGet(); if (!ui.seenAt) { ui.seenAt = Date.now(); seenSet(ui.seenAt); }
 save();
 paintSync();
 if (SY.token) queueSync(300);

@@ -21,19 +21,22 @@
     migrate(st);
     const act = st.tasks.filter(x => x.status === 'todo' || x.status === 'blocked');
     const sort = (a, b) => RANK[a.prio] - RANK[b.prio];
-    const late = act.filter(x => x.slots.some(s => s.d && s.d < today && !s.ok)).sort(sort);
+    const past = x => x.slots.some(s => s.d && s.d < today && !s.ok);
+    const late = act.filter(x => x.hard && past(x)).sort(sort);
+    const carry = act.filter(x => !x.hard && past(x));
     const tod = act.filter(x => x.slots.some(s => s.d === today && !s.ok)).sort(sort);
     const arr = st.waits.filter(w => w.date && w.date <= today);
     const needT = act.filter(x => x.needs.some(n => !n.ok)).sort(sort);
     const nNeeds = needT.reduce((k, x) => k + x.needs.filter(n => !n.ok).length, 0);
     const ic = x => x.status === 'blocked' ? '🟣' : (ICON[x.prio] || '•');
     const lines = [], parts = [];
-    if (late.length) lines.push(`⚠ En retard : ${late.map(x => ic(x) + ' ' + x.title).join(', ')}`);
+    if (late.length) lines.push(`📌 Échéance dépassée : ${late.map(x => ic(x) + ' ' + x.title).join(', ')}`);
+    if (carry.length) lines.push(`🔁 À reprendre quand tu veux : ${carry.map(x => x.title).join(', ')}`);
     if (tod.length) lines.push(`📌 Aujourd'hui : ${tod.map(x => ic(x) + ' ' + x.title).join(', ')}`);
     if (arr.length) lines.push(`📦 Attendu : ${arr.map(w => w.title).join(', ')}`);
     if (needT.length) lines.push(`🛒 Besoins : ${needT.map(x => x.needs.filter(n => !n.ok).map(n => n.text).join(', ') + ' (' + x.title + ')').join(' · ')}`);
     if (tod.length) parts.push(`${tod.length} aujourd'hui`);
-    if (late.length) parts.push(`${late.length} en retard`);
+    if (late.length) parts.push(`${late.length} échéance${late.length > 1 ? "s" : ""} dépassée${late.length > 1 ? "s" : ""}`);
     if (arr.length) parts.push(`${arr.length} colis`);
     if (nNeeds) parts.push(`${nNeeds} besoin${nNeeds > 1 ? 's' : ''}`);
     return {
