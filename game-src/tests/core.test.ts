@@ -72,3 +72,23 @@ describe('déplacement', () => {
     expect(p.stamina).toBeCloseTo(50 + GameConfig.player.staminaRegen);
   });
 });
+
+describe('déplacement parallèle au monde (mode grille)', () => {
+  const m = buildRefuge(1);
+  it('→ avance le long de l’axe x de la carte, sans dériver en y', () => {
+    const p = newPlayer(20.5, 22.5);
+    for (let i = 0; i < 10; i++) stepPlayer(p, { sx: 1, sy: 0, run: false }, m, 1 / 60);
+    expect(p.x).toBeGreaterThan(20.5); expect(p.y).toBeCloseTo(22.5);
+  });
+  it('↑ avance le long de l’axe y (vers le nord de la carte)', () => {
+    const p = newPlayer(20.5, 22.5);
+    for (let i = 0; i < 10; i++) stepPlayer(p, { sx: 0, sy: -1, run: false }, m, 1 / 60);
+    expect(p.y).toBeLessThan(22.5); expect(p.x).toBeCloseTo(20.5);
+  });
+  it('au joystick, la direction est calée sur un axe de la carte', () => {
+    const p = newPlayer(20.5, 22.5);
+    for (let i = 0; i < 10; i++) stepPlayer(p, { sx: 0.9, sy: 0.3, run: false, analog: true }, m, 1 / 60);
+    const dx = p.x - 20.5, dy = p.y - 22.5;
+    expect(Math.min(Math.abs(dx), Math.abs(dy))).toBeCloseTo(0);
+  });
+});

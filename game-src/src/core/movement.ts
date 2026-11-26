@@ -19,6 +19,7 @@ export interface MoveInput {
   sx: number; // direction écran : -1..1 (droite positive)
   sy: number; // -1..1 (bas positif)
   run: boolean;
+  analog?: boolean; // joystick : direction libre à l'écran, à caler sur la grille
 }
 
 export function newPlayer(x: number, y: number): PlayerState {
@@ -46,7 +47,9 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
   const P = GameConfig.player;
   const len = Math.hypot(input.sx, input.sy);
   const strength = Math.min(1, len);
-  const dir = GameConfig.controls === 'grid' ? gridDir(input.sx, input.sy) : screenDirToGrid(input.sx, input.sy);
+  const dir = GameConfig.controls === 'grid'
+    ? (input.analog ? snapToAxes(screenDirToGrid(input.sx, input.sy)) : gridDir(input.sx, input.sy))
+    : screenDirToGrid(input.sx, input.sy);
   p.moving = strength > 0.05;
 
   // Endurance (cahier 9.2)
@@ -73,6 +76,12 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
 function gridDir(sx: number, sy: number) {
   const l = Math.hypot(sx, sy);
   return l ? { x: sx / l, y: sy / l } : { x: 0, y: 0 };
+}
+
+/** Cale une direction de grille sur l'axe de la carte le plus proche (parallèle au monde). */
+export function snapToAxes(d: { x: number; y: number }) {
+  if (d.x === 0 && d.y === 0) return d;
+  return Math.abs(d.x) >= Math.abs(d.y) ? { x: Math.sign(d.x), y: 0 } : { x: 0, y: Math.sign(d.y) };
 }
 
 /** Direction d'affichage parmi 8 (0 = vers +x sur la grille, sens horaire). */

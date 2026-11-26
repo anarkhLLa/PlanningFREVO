@@ -16,8 +16,8 @@ describe('monde continu', () => {
     expect(regionAt(18, 14)?.id).toBe('refuge'); expect(regionAt(27, 40)?.id).toBe('garage');
     // on part du refuge et on suit la route vers le sud sans jamais être bloqué
     const p = newPlayer(27.5, 20.5);
-    for (let i = 0; i < 400 && p.y < 45; i++) stepPlayer(p, { sx: -0.5, sy: 1, run: true }, W, 0.05);
-    expect(p.y).toBeGreaterThan(45);
+    for (let i = 0; i < 400 && p.y < 45; i++) stepPlayer(p, { sx: 0, sy: 1, run: true }, W, 0.05); // ↓ = vers le sud, le long de la route
+    expect(p.y).toBeGreaterThanOrEqual(45);
     expect(regionAt(p.x, p.y)?.id).toBe('garage');
   });
   it('le garage est ouvert côté route et ses caches sont posées à leur place', () => {

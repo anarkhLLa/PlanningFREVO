@@ -26,7 +26,7 @@ export class Controls {
     let sy = (k('KeyS', 'ArrowDown') ? 1 : 0) - (k('KeyW', 'ArrowUp') ? 1 : 0);
     if (this.joy.active) { sx = this.joy.x; sy = this.joy.y; }
     const run = k('ShiftLeft', 'ShiftRight') || this.runToggle;
-    return { sx, sy, run };
+    return { sx, sy, run, analog: this.joy.active };
   }
 
   private buildTouch() {

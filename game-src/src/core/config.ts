@@ -21,10 +21,11 @@ export const GameConfig = {
   },
 
   /**
-   * Contrôles : 'screen' = la flèche droite va vers la droite de l'écran (comme Project Zomboid).
-   * 'grid' = les flèches suivent les lignes de la carte (droite = le long des murs, vers le bas-droite).
+   * Contrôles. 'grid' (choix de l'utilisateur) : on avance parallèlement au monde, le long des lignes de la carte
+   * (→ = vers le bas-droite de l'écran, ↓ = bas-gauche, ↑ = haut-droite, ← = haut-gauche) ; au joystick,
+   * la direction est calée sur les axes de la carte. 'screen' = → va vers la droite de l'écran (comme Project Zomboid).
    */
-  controls: 'screen' as 'screen' | 'grid',
+  controls: 'grid' as 'screen' | 'grid',
 
   camera: {
     zoomMin: 0.75,
