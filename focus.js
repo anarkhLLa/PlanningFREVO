@@ -343,7 +343,7 @@ function renderReview() {
   if (!t) { $('#main').innerHTML = `<div class="fwrap">${h}<div class="fsec fempty">Rien à revoir ici 👌</div>${B('f-rv-exit', '← Retour', 'full')}</div>`; return; }
   const enter = ui.fEnter ? ` enter-${ui.fEnter}` : ''; ui.fEnter = '';
   const done = !isActive(t);
-  h += `<div class="rv-nav">${B('f-rv-prev', '‹', '', rv.i ? '' : 'disabled')}<span>${rv.i + 1} / ${rv.ids.length}</span>${B('f-rv-next', '›', '', rv.i < rv.ids.length - 1 ? '' : 'disabled')}</div>
+  h += `<div class="rv-nav"><span>${rv.i + 1} / ${rv.ids.length}</span><small>glisse la carte pour changer de tâche</small></div>
   <div class="fcard rv-card${enter}${done ? ' is-done' : ''}" data-swipe="review" data-p="${t.prio}">
     <div class="fcard-top"><span class="fcard-kicker">${done ? (t.status === 'done' ? '✓ Terminée' : '✕ Barrée') : esc(catLabel(t.cat))}</span><button class="fopen" data-act="f-open" data-id="${t.id}" aria-label="Détails">⋯</button></div>
     <div class="fcard-title">${esc(t.title)}</div>
@@ -352,7 +352,7 @@ function renderReview() {
       ${done ? B('f-rv-reopen', '↺ Rouvrir', '', `data-id="${t.id}"`) : `${B('f-done', '✓ Fait', 'ok', `data-id="${t.id}"`)}${B('f-start', t.startedAt ? '▶ Commencée' : '▶ Commencer', t.startedAt ? 'primary' : '', `data-id="${t.id}"`)}${B('f-block', '⛔ Bloquée', '', `data-id="${t.id}"`)}${B('f-rv-cancel', '✕ Barrer', 'danger', `data-id="${t.id}"`)}`}
     </div>
     ${filter === 'inactive' && !done ? `<div class="rv-decide"><small>Pas touchée depuis 2 semaines. Une seule décision :</small><div class="grid3">${B('f-rv-keep', 'Garder', '', `data-id="${t.id}"`)}${B('f-rv-tomorrow', 'Demain', '', `data-id="${t.id}"`)}${B('f-rv-cancel', 'Abandonner', 'danger', `data-id="${t.id}"`)}</div></div>` : ''}
-    <div class="fswipe-hint"><span>⟵ suivante</span><span>précédente ⟶</span></div>
+    <div class="fswipe-hint"><span>${rv.i < rv.ids.length - 1 ? '⟵ suivante' : 'dernière'}</span><span>${rv.i ? 'précédente ⟶' : ''}</span></div>
   </div>`;
   $('#main').innerHTML = `<div class="fwrap">${h}</div>`;
 }
@@ -482,7 +482,7 @@ function focusSettingsHTML() {
 let sw = null;
 document.addEventListener('pointerdown', e => {
   const el = e.target.closest && e.target.closest('[data-swipe]');
-  if (!el || e.target.closest('button,input,textarea,select,a,label,form')) return;
+  if (!el || e.target.closest('input,textarea,select')) return;
   sw = { el, id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, active: false };
 });
 document.addEventListener('pointermove', e => {
