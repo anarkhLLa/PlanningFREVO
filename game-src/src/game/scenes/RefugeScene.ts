@@ -29,7 +29,7 @@ export class RefugeScene extends Phaser.Scene {
     this.drawMap();
 
     this.shadow = this.add.image(0, 0, 'shadow');
-    this.playerImg = this.add.image(0, 0, 'pl_0_0').setOrigin(0.5, 60 / 72);
+    this.playerImg = this.add.image(0, 0, 'pl_0_0').setOrigin(0.5, 64 / 76);
 
     const root = document.getElementById('hud')!;
     this.controls = new Controls(root);

@@ -101,57 +101,73 @@ export function makeTextures(scene: Phaser.Scene) {
   tex.addCanvas('shadow', c);
 }
 
-/* ---------- personnage en blocs ---------- */
-// Boîte isométrique générique en coordonnées locales (u vers +x, v vers +y, z vers le haut), unité = px de grille.
-function box(ctx: CanvasRenderingContext2D, ox: number, oy: number, u0: number, u1: number, v0: number, v1: number, z0: number, z1: number, col: RGB, faceDetail?: (ctx: CanvasRenderingContext2D, side: 'left' | 'right') => void) {
-  const P = (u: number, v: number, z: number): [number, number] => [ox + (u - v), oy + (u + v) / 2 - z];
-  quad(ctx, [P(u0, v1, z1), P(u1, v1, z1), P(u1, v1, z0), P(u0, v1, z0)], hex(col, 0.8)); // face gauche (v = v1)
-  quad(ctx, [P(u1, v0, z1), P(u1, v1, z1), P(u1, v1, z0), P(u1, v0, z0)], hex(col, 0.64)); // face droite (u = u1)
-  quad(ctx, [P(u0, v0, z1), P(u1, v0, z1), P(u1, v1, z1), P(u0, v1, z1)], hex(col, 1)); // dessus
-  if (faceDetail) { faceDetail(ctx, 'left'); faceDetail(ctx, 'right'); }
-}
+/* ---------- personnage en blocs, 8 vraies orientations ---------- */
+type Pt = [number, number];
+interface Part { u0: number; u1: number; v0: number; v1: number; z0: number; z1: number; col: RGB; face?: boolean }
 
 /**
- * 4 orientations × 2 images de marche. Orientation : 0 = face vers +x (bas-droite écran),
- * 1 = face vers +y (bas-gauche), 2 = dos (haut-gauche), 3 = dos (haut-droite).
+ * Dessine un modèle fait de boîtes, tourné d'un angle quelconque autour de l'axe vertical.
+ * Le modèle regarde vers +u ; la caméra regarde depuis +x+y (faces visibles : celles tournées vers elle).
  */
-function makePlayer(scene: Phaser.Scene) {
-  const SKIN: RGB = [214, 168, 128], SHIRT: RGB = [62, 108, 140], PANTS: RGB = [58, 62, 86], HAIR: RGB = [70, 48, 32], BAG: RGB = [110, 86, 52];
-  for (let o = 0; o < 4; o++) for (let f = 0; f < 2; f++) {
-    const { c, ctx } = canvas(48, 72);
-    const ox = 24, oy = 60; // pied au centre bas
-    const swing = f === 0 ? 0 : 3;
-    // jambes (alternance pour la marche)
-    box(ctx, ox, oy, -6, -1, -3, 3, 0, 18 + (f ? swing : 0) * 0, PANTS);
-    box(ctx, ox, oy, 1, 6, -3, 3, f ? 2 : 0, 18, PANTS);
-    // corps
-    box(ctx, ox, oy, -7, 7, -4, 4, 18, 36, SHIRT);
-    // sac à dos, sur le dos (donc visible quand le personnage s'éloigne)
-    if (o === 2) box(ctx, ox, oy, 7, 10, -5, 5, 21, 33, BAG);
-    if (o === 3) box(ctx, ox, oy, -5, 5, 4, 7, 21, 33, BAG);
-    // bras
-    box(ctx, ox, oy, -10, -7, -2 + (f ? -swing : 0), 2, 20, 35, SKIN);
-    box(ctx, ox, oy, 7, 10, -2, 2 + (f ? swing : 0), 20, 35, SKIN);
-    // tête
-    const faceToward = o === 0 ? 'right' : o === 1 ? 'left' : null;
-    box(ctx, ox, oy, -6, 6, -6, 6, 36, 50, o >= 2 ? HAIR : SKIN, (cx, side) => {
-      if (side !== faceToward) return;
-      // yeux + bouche dessinés sur la face visible
-      cx.fillStyle = '#1b1b24';
-      const P = (u: number, v: number, z: number) => [ox + (u - v), oy + (u + v) / 2 - z];
-      const dot = (u: number, v: number, z: number) => { const [x, y] = P(u, v, z); cx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2); };
-      if (side === 'right') { dot(6, -3, 44); dot(6, 3, 44); } else { dot(-3, 6, 44); dot(3, 6, 44); }
-    });
-    // cheveux
-    box(ctx, ox, oy, -6, 6, -6, 6, 50, 53, HAIR);
-    scene.textures.addCanvas(`pl_${o}_${f}`, c);
+function drawModel(ctx: CanvasRenderingContext2D, ox: number, oy: number, parts: Part[], angle: number) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const rot = (u: number, v: number): Pt => [u * c - v * s, u * s + v * c];
+  const P = (u: number, v: number, z: number): Pt => { const [x, y] = rot(u, v); return [ox + (x - y), oy + (x + y) / 2 - z]; };
+  // ordre du peintre : du fond (x+y petit) vers l'avant, puis du bas vers le haut
+  const sorted = parts.map(p => { const [x, y] = rot((p.u0 + p.u1) / 2, (p.v0 + p.v1) / 2); return { p, d: x + y + p.z0 * 0.002 }; }).sort((a, b) => a.d - b.d);
+  for (const { p } of sorted) {
+    const { u0, u1, v0, v1, z0, z1, col } = p;
+    // 4 faces latérales : [coins (u,v) du bas], normale locale
+    const sides: { a: Pt; b: Pt; n: Pt; front: boolean }[] = [
+      { a: [u1, v0], b: [u1, v1], n: [1, 0], front: true },
+      { a: [u0, v1], b: [u0, v0], n: [-1, 0], front: false },
+      { a: [u1, v1], b: [u0, v1], n: [0, 1], front: false },
+      { a: [u0, v0], b: [u1, v0], n: [0, -1], front: false }
+    ];
+    for (const f of sides) {
+      const [nx, ny] = rot(f.n[0], f.n[1]);
+      const view = (nx + ny) / Math.SQRT2; // > 0 : face tournée vers la caméra
+      if (view <= 0.02) continue;
+      const light = 0.58 + 0.3 * Math.max(0, ny * 0.8 + nx * 0.2) + 0.1 * view;
+      quad(ctx, [P(f.a[0], f.a[1], z1), P(f.b[0], f.b[1], z1), P(f.b[0], f.b[1], z0), P(f.a[0], f.a[1], z0)], hex(col, light));
+      if (p.face && f.front) {
+        // yeux sur la face avant de la tête
+        ctx.fillStyle = '#1b1b24';
+        const zEye = z0 + (z1 - z0) * 0.55;
+        for (const vv of [v0 + (v1 - v0) * 0.28, v0 + (v1 - v0) * 0.72]) {
+          const [x, y] = P(u1, vv, zEye);
+          ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+        }
+      }
+    }
+    quad(ctx, [P(u0, v0, z1), P(u1, v0, z1), P(u1, v1, z1), P(u0, v1, z1)], hex(col, 1));
   }
 }
 
-/** Choisit la texture selon la direction (8 directions logiques -> 4 dessins + miroir). */
+function makePlayer(scene: Phaser.Scene) {
+  const SKIN: RGB = [214, 168, 128], SHIRT: RGB = [62, 108, 140], PANTS: RGB = [58, 62, 86], HAIR: RGB = [70, 48, 32], BAG: RGB = [110, 86, 52], SHOE: RGB = [40, 34, 30];
+  for (let d = 0; d < 8; d++) for (let f = 0; f < 2; f++) {
+    const { c, ctx } = canvas(56, 76);
+    const st = f ? 3 : 0; // foulée
+    const parts: Part[] = [
+      { u0: -2 + st, u1: 3 + st, v0: -5, v1: -1, z0: 0, z1: 3, col: SHOE },
+      { u0: -2 - st, u1: 3 - st, v0: 1, v1: 5, z0: 0, z1: 3, col: SHOE },
+      { u0: -2 + st / 2, u1: 2 + st / 2, v0: -5, v1: -1, z0: 3, z1: 18, col: PANTS },
+      { u0: -2 - st / 2, u1: 2 - st / 2, v0: 1, v1: 5, z0: 3, z1: 18, col: PANTS },
+      { u0: -3, u1: 3, v0: -6, v1: 6, z0: 18, z1: 36, col: SHIRT },
+      { u0: -6, u1: -3, v0: -4, v1: 4, z0: 21, z1: 33, col: BAG },
+      { u0: -2 - st, u1: 2 - st, v0: -9, v1: -6, z0: 20, z1: 35, col: SKIN },
+      { u0: -2 + st, u1: 2 + st, v0: 6, v1: 9, z0: 20, z1: 35, col: SKIN },
+      { u0: -5, u1: 5, v0: -5, v1: 5, z0: 36, z1: 48, col: SKIN, face: true },
+      { u0: -5.5, u1: 5, v0: -5.5, v1: 5.5, z0: 48, z1: 51, col: HAIR },
+      { u0: -5.5, u1: -4.8, v0: -5.5, v1: 5.5, z0: 38, z1: 48, col: HAIR }
+    ];
+    drawModel(ctx, 28, 64, parts, (d * Math.PI) / 4);
+    scene.textures.addCanvas(`pl_${d}_${f}`, c);
+  }
+}
+
+/** Texture du personnage pour une des 8 directions de la grille (0 = +x, sens horaire). */
 export function playerFrame(dir8: number, walkFrame: number): { key: string; flip: boolean } {
-  // dir8 : 0=+x(bas-droite) 1=+x+y(bas) 2=+y(bas-gauche) 3=-x+y(gauche) 4=-x(haut-gauche) 5=-x-y(haut) 6=-y(haut-droite) 7=+x-y(droite)
-  const map: Record<number, [number, boolean]> = { 0: [0, false], 1: [0, false], 2: [1, false], 3: [1, false], 4: [2, false], 5: [2, false], 6: [3, false], 7: [0, false] };
-  const [o, flip] = map[dir8];
-  return { key: `pl_${o}_${walkFrame}`, flip };
+  return { key: `pl_${dir8}_${walkFrame}`, flip: false };
 }

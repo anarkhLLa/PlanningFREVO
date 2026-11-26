@@ -13,7 +13,8 @@ Ce fichier sert à reprendre le travail dans une nouvelle session sans tout rée
 - **Tâches terminées avant le jeu** : ne rapportent rien (caisse de départ à la place).
 - **Synchro de la partie** entre appareils dès l'étape 1, via le Gist privé existant.
 - **PC et téléphone** jouables : clavier/souris + joystick tactile.
-- **Style** : semi-réaliste léger en blocs, dessiné par le code (aucun asset externe pour l'instant).
+- **Style** : provisoirement en blocs dessinés par le code. **Souhait exprimé le 26/11 : un rendu semi-réaliste « cartoon réaliste », vraiment comme Project Zomboid.** Ce style demande de vrais sprites (dessinés ou achetés) : à décider plus tard (packs isométriques, artiste, ou génération d'images), le code d'affichage est prévu pour remplacer les textures sans toucher aux règles.
+- **Contrôles** : flèche droite = droite de l'écran (comme Project Zomboid), personnage dessiné en 8 vraies orientations. Réglage `controls: 'grid'` dans `config.ts` si on préfère suivre les lignes de la carte.
 - **Succès « Couché tôt, levé tôt »** : « 🌙 Je me couche » avant 23 h 00, puis « ☀️ Je suis levé » avant 9 h 00 le lendemain, au moins 5 h après. Une fois par nuit, aucune sanction ni série. Heures, délai et récompense réglables.
 - **Multijoueur (plus tard)** : Supabase (comptes, Postgres, fonctions transactionnelles) + Colyseus (salles temps réel autoritaires). La logique du jeu vit dans `game-src/src/core/` (TypeScript pur, sans Phaser) pour être réutilisée côté serveur.
 

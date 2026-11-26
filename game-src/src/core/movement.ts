@@ -45,7 +45,7 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
   const P = GameConfig.player;
   const len = Math.hypot(input.sx, input.sy);
   const strength = Math.min(1, len);
-  const dir = screenDirToGrid(input.sx, input.sy);
+  const dir = GameConfig.controls === 'grid' ? gridDir(input.sx, input.sy) : screenDirToGrid(input.sx, input.sy);
   p.moving = strength > 0.05;
 
   // Endurance (cahier 9.2)
@@ -66,6 +66,12 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
     if (!collides(map, p.x + dx, p.y)) p.x += dx;
     if (!collides(map, p.x, p.y + dy)) p.y += dy;
   }
+}
+
+/** Mode 'grid' : droite = +x, bas = +y sur la carte. */
+function gridDir(sx: number, sy: number) {
+  const l = Math.hypot(sx, sy);
+  return l ? { x: sx / l, y: sy / l } : { x: 0, y: 0 };
 }
 
 /** Direction d'affichage parmi 8 (0 = vers +x sur la grille, sens horaire). */

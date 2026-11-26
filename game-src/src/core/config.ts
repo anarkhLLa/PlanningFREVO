@@ -20,6 +20,12 @@ export const GameConfig = {
     runMinStamina: 10 // en dessous, on ne peut pas relancer la course
   },
 
+  /**
+   * Contrôles : 'screen' = la flèche droite va vers la droite de l'écran (comme Project Zomboid).
+   * 'grid' = les flèches suivent les lignes de la carte (droite = le long des murs, vers le bas-droite).
+   */
+  controls: 'screen' as 'screen' | 'grid',
+
   camera: {
     zoomMin: 0.75,
     zoomMax: 2.5,
