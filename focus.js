@@ -309,6 +309,7 @@ function renderNow() {
   }).join('')}</div>`;
   // 8. revue
   h += `<div class="fsec frev">${B('f-review', '🔁 Revue rapide des tâches', '', 'data-v="all"')}${noEn ? `<small>${noEn} sans énergie</small>` : ''}</div>`;
+  h += `<a class="fstuck" href="game/" style="text-decoration:none;text-align:center">🎮 Last Outpost <small style="opacity:.6">(prototype)</small></a>`;
   $('#main').innerHTML = `<div class="fwrap">${h}</div>`;
   requestAnimationFrame(() => requestAnimationFrame(() => $$('[data-bar]').forEach(el => { el.style.width = el.dataset.to + '%'; })));
 }
