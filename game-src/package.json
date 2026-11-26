@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && npm run build:economy",
+    "build:economy": "esbuild src/economy-entry.ts --bundle --format=iife --minify --target=es2019 --outfile=../game/economy.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

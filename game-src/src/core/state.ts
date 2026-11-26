@@ -26,6 +26,7 @@ export interface GameState {
   equipment: { bag?: string; main?: string }; // identifiants d'instance
   ledger: Ledger;
   containers: Record<string, ContainerState>;
+  claimed: string[]; // contrats dont la cache a été récupérée (lu aussi par le planning)
 }
 
 export function newGame(map: ZoneMap, now = Date.now()): GameState {
@@ -39,7 +40,8 @@ export function newGame(map: ZoneMap, now = Date.now()): GameState {
     inventory: inv,
     equipment: { bag: bag.id, main: inv.items[0].id },
     ledger: newLedger(),
-    containers: {}
+    containers: {},
+    claimed: []
   };
   post(s.ledger, 'start:capsules:v1', GameConfig.start.capsules, 'Capsules de départ', now);
   return s;
@@ -52,6 +54,7 @@ export function migrate(raw: unknown): GameState | null {
   if (typeof s.schema !== 'number' || !s.inventory || !s.ledger) return null;
   // (aucune migration encore : schéma 1)
   s.containers ||= {};
+  s.claimed ||= [];
   s.equipment ||= {};
   return s;
 }

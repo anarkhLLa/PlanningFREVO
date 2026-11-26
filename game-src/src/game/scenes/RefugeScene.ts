@@ -7,6 +7,7 @@ import type { WorldObject } from '../../core/map';
 import { carried, findTarget, isOverloaded, newGame, openContainer, playerFromState, storePlayer, type GameState } from '../../core/state';
 import { Panels } from '../panels';
 import { AutoSave } from '../save';
+import { syncFromPlanner, watchPlanner } from '../bridge';
 import { Controls } from '../input';
 import { Hud } from '../hud';
 import { blockKey, GROUND_VARIANTS, groundKey, makeTextures, playerFrame } from '../textures';
@@ -49,6 +50,8 @@ export class RefugeScene extends Phaser.Scene {
     this.autosave = new AutoSave(() => { storePlayer(this.state, this.player); return this.state; });
     this.panels = new Panels(root, () => this.state, () => this.onStateChanged(), () => this.interact(), this.controls.touch);
     this.input.keyboard?.on('keydown-E', () => this.interact());
+    this.syncPlanner(true);
+    watchPlanner(() => this.syncPlanner(false));
     this.autosave.soon(100); // première sauvegarde (nouvelle partie)
     this.setupCamera();
     this.syncPlayerSprite(0);
@@ -158,6 +161,18 @@ export class RefugeScene extends Phaser.Scene {
     const c = openContainer(this.state, o);
     this.onStateChanged();
     this.panels.showContainer(o, c);
+  }
+
+  /** Inscrit les récompenses gagnées dans le planning et met à jour les contrats. */
+  private syncPlanner(first: boolean) {
+    const r = syncFromPlanner(this.state);
+    this.panels.journal = { contracts: r.contracts, xp: r.xp };
+    if (r.added.length) {
+      const total = r.added.reduce((a, x) => a + x.amount, 0);
+      this.panels.toast(r.added.length === 1 ? `📻 +${total} 🧢 · ${r.added[0].reason}` : `📻 ${first ? 'Pendant ton absence' : 'Nouveau'} : +${total} 🧢 (${r.added.length} récompenses)`);
+      this.autosave.soon(200);
+    }
+    this.panels.refreshBadge();
   }
 
   private onStateChanged() {

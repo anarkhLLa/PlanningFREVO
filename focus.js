@@ -219,6 +219,53 @@ function summaryHTML() {
   return `<div class="fsec fsum">${h}<button class="btn sm" data-act="f-sum-ok">OK 👍</button></div>`;
 }
 
+/* ---------- lien avec Last Outpost (game/economy.js) ---------- */
+function loSummary() {
+  if (!window.LOEconomy) return null;            // le planning fonctionne sans le jeu
+  let save = null;
+  try { save = JSON.parse(localStorage.getItem(window.LOEconomy.SAVE_KEY) || 'null'); } catch (e) {}
+  try { return window.LOEconomy.summary({ tasks: S.tasks, events: S.events }, save); } catch (e) { return null; }
+}
+function loHTML() {
+  const lo = loSummary(); if (!lo) return '';
+  const tc = lo.toCollect;
+  loSig = lo.balance + ':' + tc.length; // ce qui est affiché : le rafraîchissement compare avec ça
+  return `<div class="fsec flo"><div class="flo-h"><b>🧢 ${lo.balance} capsules</b><a class="btn sm" href="game/">🎮 Last Outpost</a></div>
+    ${tc.length ? `<div class="flo-new">📦 À aller chercher : ${tc.slice(0, 3).map(c => `<b>${esc(c.title)}</b>`).join(', ')}${tc.length > 3 ? ` et ${tc.length - 3} autre${tc.length > 4 ? 's' : ''}` : ''}</div>` : '<small>Termine une tâche : une cache t’attendra dans le jeu.</small>'}</div>`;
+}
+let loSig = '';
+setInterval(() => {   // les récompenses apparaissent après le délai d'annulation : on rafraîchit sans déranger
+  if (typeof S === 'undefined' || S.settings.view !== 'now') return;
+  const lo = loSummary(); if (!lo) return;
+  const sig = lo.balance + ':' + lo.toCollect.length;
+  if (sig === loSig) return;
+  if (!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '') && $('#sheet').classList.contains('hidden')) render();
+}, 6000);
+
+/* « Couché tôt, levé tôt » : réglable dans Réglages, jamais de sanction ni de série */
+const SLEEP_DEF = { bed: '23:00', wake: '09:00', minH: 5 };
+const sleepCfg = () => Object.assign({}, SLEEP_DEF, S.settings.sleep || {});
+const minutesOf = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + (m || 0); };
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+function sleepState() {
+  const c = sleepCfg(), m = nowMin(), d = today(), y = addDays(d, -1);
+  const ev = k => S.events.filter(e => e.kind === k);
+  const sleptTonight = ev('sleep').some(e => e.day === d && new Date(e.at).getHours() >= 12);
+  const lastNight = ev('sleep').find(e => e.day === y && new Date(e.at).getHours() >= 12);
+  const woke = ev('earlybird').some(e => e.day === d) || ev('wake').some(e => e.day === d);
+  if (m >= 18 * 60 && m < minutesOf(c.bed) && !sleptTonight) return { show: 'bed' };
+  if (sleptTonight && m >= 18 * 60) return { show: 'night' };
+  if (m < minutesOf(c.wake) && lastNight && !woke) return { show: 'wake', since: lastNight.at };
+  return { show: null };
+}
+function sleepHTML() {
+  const st = sleepState(), c = sleepCfg();
+  if (st.show === 'bed') return `<button class="fsleep" data-act="f-bed">🌙 Je me couche <small>avant ${c.bed}</small></button>`;
+  if (st.show === 'night') return `<div class="fsleep done">🌙 Bonne nuit. Demain, appuie sur « Je suis levé » avant ${c.wake}.</div>`;
+  if (st.show === 'wake') return `<button class="fsleep wake" data-act="f-wake">☀️ Je suis levé <small>avant ${c.wake}</small></button>`;
+  return '';
+}
+
 /* ---------- écran « Maintenant » ---------- */
 function bar(id, pct) {
   const from = (ui.barW && ui.barW[id] != null) ? ui.barW[id] : pct;
@@ -275,6 +322,7 @@ function renderNow() {
     ${bar('lv', pctLv)}
     <div class="fprog-row small"><span>Aujourd'hui : <b>+${xd} XP</b>${doneToday ? ` · ${doneToday} fait${doneToday > 1 ? 's' : ''}` : ''}</span><span>Cette semaine : ${summaryParts(wk).slice(0, 2).join(', ') || 'ça commence ici'}</span></div>
     ${bar('day', pctDay)}</div>`;
+  h += sleepHTML() + loHTML();
   // 3. état d'énergie (un geste)
   h += `<div class="fsec"><div class="fq">Comment est ton énergie là, maintenant ?</div>
     <div class="fen">${ENERGY.map(([k, ic, l]) => `<button class="fen-b${f.en === k ? ' on' : ''}" data-act="f-en" data-v="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>
@@ -418,6 +466,14 @@ function focusAct(a, el) {
     case 'f-sum-ok': ui.seenAt = Date.now(); seenSet(ui.seenAt); render(); return;
     case 'f-mpass': { const ms = ensureMissions(), m = ms.list.find(x => x.carried && !x.done && !x.skipped); if (m) { m.skipped = true; ms.passUsed = true; } commit('Mission passée, pas de souci'); return; }
     case 'f-mic': dictate(); return;
+    case 'f-bed': { const u = snapshot(); award('sleep', null, 0, 'Couché'); commit('🌙 Bonne nuit !', u); return; }
+    case 'f-wake': {
+      const st = sleepState(), c = sleepCfg(), u = snapshot();
+      if (st.show !== 'wake') return;
+      if (Date.now() - st.since >= c.minH * 3600e3) { award('earlybird', null, 10, 'Couché tôt, levé tôt'); commit('☀️ Couché tôt, levé tôt ! +15 🧢 dans Last Outpost', u); celebrate(10, true); }
+      else { award('wake', null, 0, 'Levé'); commit('☀️ Bonjour ! (nuit trop courte pour le succès)', u); }
+      return;
+    }
     case 'f-review': S.settings.rvF = el.dataset.v || 'all'; S.settings.view = 'review'; ui.rv = null; closeSheet(); save(); render(false); $('#main').scrollTop = 0; return;
     case 'f-rv-f': S.settings.rvF = el.dataset.v; ui.rv = null; save(); render(false); return;
     case 'f-rv-exit': S.settings.view = 'now'; ui.rv = null; save(); render(false); return;
@@ -476,7 +532,11 @@ function focusSettingsHTML() {
     <label class="chk"><input type="checkbox" data-fx="sound"${c('sound')}> Petit son</label>
     <label class="chk"><input type="checkbox" data-fx="vib"${c('vib')}> Vibration discrète</label>
     <label class="chk"><input type="checkbox" data-fx="anim"${c('anim')}> Animations</label>
-    <p style="margin-top:8px">Ton atelier : niveau ${atelierLevel(xpTotal()) + 1} · ${xpTotal()} XP au total. Il ne se dégrade jamais, même si tu fais une pause.</p></div>`;
+    <p style="margin-top:8px">Ton atelier : niveau ${atelierLevel(xpTotal()) + 1} · ${xpTotal()} XP au total. Il ne se dégrade jamais, même si tu fais une pause.</p>
+    <div class="lbl">🌙 Couché tôt, levé tôt</div>
+    <div class="sleep-set"><label>Se coucher avant <input type="time" data-sleep="bed" value="${sleepCfg().bed}"></label>
+      <label>Se lever avant <input type="time" data-sleep="wake" value="${sleepCfg().wake}"></label>
+      <label>Nuit d'au moins <input type="number" min="1" max="12" data-sleep="minH" value="${sleepCfg().minH}"> h</label></div></div>`;
 }
 
 /* ---------- gestes ---------- */
@@ -514,6 +574,7 @@ document.addEventListener('pointerup', e => swipeEnd(e, false));
 document.addEventListener('pointercancel', e => swipeEnd(e, true));
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset && el.dataset.sleep) { const v = el.dataset.sleep === 'minH' ? Math.max(1, +el.value || 5) : el.value; S.settings.sleep = Object.assign(sleepCfg(), { [el.dataset.sleep]: v }); save(); return; }
   if (el.dataset && el.dataset.fx) { (S.settings.fx || (S.settings.fx = {}))[el.dataset.fx] = el.checked; save(); if (el.checked && el.dataset.fx === 'sound') chime(false); }
   else if (el.classList && el.classList.contains('tg-next')) { const t = find(el.dataset.id); if (t) { const xp = setNext(t, el.value); commit(); celebrate(xp); } }
 });
