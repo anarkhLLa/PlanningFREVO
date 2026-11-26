@@ -10,10 +10,19 @@ export class Controls {
   private joy = { x: 0, y: 0, active: false, id: -1 };
   private runToggle = false;
   readonly touch: boolean;
+  /** Actions ponctuelles (branchées par la scène). */
+  onAttack: () => void = () => {};
+  onDodge: () => void = () => {};
 
   constructor(private root: HTMLElement) {
     this.touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-    addEventListener('keydown', e => { if (!isTyping(e)) this.keys.add(e.code); });
+    addEventListener('keydown', e => {
+      if (isTyping(e)) return;
+      this.keys.add(e.code);
+      if (e.repeat) return;
+      if (e.code === 'Space') { e.preventDefault(); this.onDodge(); }
+      else if (e.code === 'KeyF') this.onAttack();
+    });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
     this.buildTouch();
@@ -56,7 +65,13 @@ export class Controls {
     run.className = 'tbtn run'; run.textContent = '🏃';
     run.setAttribute('aria-label', 'Courir');
     run.addEventListener('pointerdown', e => { this.runToggle = !this.runToggle; run.classList.toggle('on', this.runToggle); e.preventDefault(); });
-    this.root.append(pad, run);
+    const atk = document.createElement('button');
+    atk.className = 'tbtn atk'; atk.textContent = '⚔️'; atk.setAttribute('aria-label', 'Frapper');
+    atk.addEventListener('pointerdown', e => { e.preventDefault(); this.onAttack(); });
+    const dodge = document.createElement('button');
+    dodge.className = 'tbtn dodge'; dodge.textContent = '💨'; dodge.setAttribute('aria-label', 'Esquiver');
+    dodge.addEventListener('pointerdown', e => { e.preventDefault(); this.onDodge(); });
+    this.root.append(pad, run, atk, dodge);
   }
 }
 

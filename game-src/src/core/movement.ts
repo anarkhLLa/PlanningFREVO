@@ -12,6 +12,10 @@ export interface PlayerState {
   exhausted: boolean; // endurance vidée : course bloquée jusqu'au seuil
   moving: boolean;
   overloaded: boolean; // calculé par la partie à partir du poids transporté
+  dodgeT: number; // esquive en cours (s restantes)
+  dodgeCd: number;
+  invuln: number; // invulnérabilité (esquive, coup reçu)
+  attackCd: number;
 }
 
 /** Intention envoyée par les contrôles (clavier, joystick… ou réseau plus tard). */
@@ -24,11 +28,11 @@ export interface MoveInput {
 
 export function newPlayer(x: number, y: number): PlayerState {
   const P = GameConfig.player;
-  return { x, y, facing: Math.PI / 4, health: P.maxHealth, stamina: P.maxStamina, running: false, exhausted: false, moving: false, overloaded: false };
+  return { x, y, facing: Math.PI / 4, health: P.maxHealth, stamina: P.maxStamina, running: false, exhausted: false, moving: false, overloaded: false, dodgeT: 0, dodgeCd: 0, invuln: 0, attackCd: 0 };
 }
 
 /** Le cercle du joueur touche-t-il une case solide ? */
-export function collides(map: ZoneMap, x: number, y: number, r = GameConfig.player.radius): boolean {
+export function collides(map: ZoneMap, x: number, y: number, r: number = GameConfig.player.radius): boolean {
   const x0 = Math.floor(x - r), x1 = Math.floor(x + r), y0 = Math.floor(y - r), y1 = Math.floor(y + r);
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
     if (!isSolid(map, tx, ty)) continue;
@@ -51,6 +55,16 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
     ? (input.analog ? snapToAxes(screenDirToGrid(input.sx, input.sy)) : gridDir(input.sx, input.sy))
     : screenDirToGrid(input.sx, input.sy);
   p.moving = strength > 0.05;
+  p.dodgeCd = Math.max(0, p.dodgeCd - dt); p.invuln = Math.max(0, p.invuln - dt); p.attackCd = Math.max(0, p.attackCd - dt);
+  // esquive : courte ruée dans la direction du regard, quelles que soient les touches
+  if (p.dodgeT > 0) {
+    p.dodgeT = Math.max(0, p.dodgeT - dt);
+    const v = P.walkSpeed * GameConfig.combat.dodge.speed * dt, dx = Math.cos(p.facing) * v, dy = Math.sin(p.facing) * v;
+    if (!collides(map, p.x + dx, p.y)) p.x += dx;
+    if (!collides(map, p.x, p.y + dy)) p.y += dy;
+    p.moving = true;
+    return;
+  }
 
   // Endurance (cahier 9.2)
   if (p.stamina <= 0) p.exhausted = true;
@@ -76,6 +90,14 @@ export function stepPlayer(p: PlayerState, input: MoveInput, map: ZoneMap, dt: n
 function gridDir(sx: number, sy: number) {
   const l = Math.hypot(sx, sy);
   return l ? { x: sx / l, y: sy / l } : { x: 0, y: 0 };
+}
+
+/** Lance une esquive si l'endurance et la recharge le permettent. */
+export function startDodge(p: PlayerState): boolean {
+  const D = GameConfig.combat.dodge;
+  if (p.dodgeT > 0 || p.dodgeCd > 0 || p.stamina < D.stamina || p.health <= 0) return false;
+  p.stamina -= D.stamina; p.dodgeT = D.time; p.dodgeCd = D.time + D.cooldown; p.invuln = Math.max(p.invuln, D.time + 0.05);
+  return true;
 }
 
 /** Cale une direction de grille sur l'axe de la carte le plus proche (parallèle au monde). */

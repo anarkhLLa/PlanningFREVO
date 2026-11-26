@@ -91,6 +91,7 @@ export class Panels {
   close() { this.open = null; this.cont = null; this.modal.classList.add('hidden'); this.modal.innerHTML = ''; }
 
   private render() {
+    if (!this.open) return; // fenêtre fermée entre-temps (ex. sac perdu récupéré)
     const s = this.state();
     const wt = carried(s), max = GameConfig.inventory.maxWeight;
     const head = `<div class="mhead"><b>${this.open === 'container' ? this.cont!.obj.name : 'Inventaire'}</b>

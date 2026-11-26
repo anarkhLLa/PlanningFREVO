@@ -54,6 +54,15 @@ export const GameConfig = {
     starterRefillDaily: true
   },
 
+  /** Combat et défaite (cahier 11). */
+  combat: {
+    gentle: false, // mode doux : aucune perte de butin en cas de défaite
+    lossShare: 0.5, // part des ressources transportées laissée dans le sac perdu
+    respawnHealth: 0.6, // santé au réveil au refuge
+    hitInvuln: 0.5, // invulnérabilité après un coup reçu (s)
+    dodge: { time: 0.22, speed: 2.6, stamina: 15, cooldown: 0.45 } // esquive : durée, multiplicateur, coût, recharge
+  },
+
   /** Constructions / réparations (cahier 13.3). */
   build: {
     bench: { wood: 10, scrap: 5 } as Record<string, number>

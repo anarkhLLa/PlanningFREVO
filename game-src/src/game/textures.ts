@@ -152,27 +152,58 @@ function drawModel(ctx: CanvasRenderingContext2D, ox: number, oy: number, parts:
   }
 }
 
-function makePlayer(scene: Phaser.Scene) {
-  const SKIN: RGB = [214, 168, 128], SHIRT: RGB = [62, 108, 140], PANTS: RGB = [58, 62, 86], HAIR: RGB = [70, 48, 32], BAG: RGB = [110, 86, 52], SHOE: RGB = [40, 34, 30];
+interface Look { skin: RGB; shirt: RGB; pants: RGB; hair: RGB; bag?: RGB; shoe: RGB; zombie?: boolean }
+const SURVIVOR: Look = { skin: [214, 168, 128], shirt: [62, 108, 140], pants: [58, 62, 86], hair: [70, 48, 32], bag: [110, 86, 52], shoe: [40, 34, 30] };
+const WALKER: Look = { skin: [128, 146, 104], shirt: [92, 74, 62], pants: [56, 58, 64], hair: [44, 40, 36], shoe: [36, 32, 30], zombie: true };
+
+function characterParts(L: Look, f: number): Part[] {
+  const st = f ? 3 : 0; // foulée
+  const parts: Part[] = [
+    { u0: -2 + st, u1: 3 + st, v0: -5, v1: -1, z0: 0, z1: 3, col: L.shoe },
+    { u0: -2 - st, u1: 3 - st, v0: 1, v1: 5, z0: 0, z1: 3, col: L.shoe },
+    { u0: -2 + st / 2, u1: 2 + st / 2, v0: -5, v1: -1, z0: 3, z1: 18, col: L.pants },
+    { u0: -2 - st / 2, u1: 2 - st / 2, v0: 1, v1: 5, z0: 3, z1: 18, col: L.pants },
+    { u0: -3, u1: 3, v0: -6, v1: 6, z0: 18, z1: L.zombie ? 34 : 36, col: L.shirt }
+  ];
+  if (L.bag) parts.push({ u0: -6, u1: -3, v0: -4, v1: 4, z0: 21, z1: 33, col: L.bag });
+  if (L.zombie) {
+    // bras tendus en avant, tête un peu basse
+    parts.push({ u0: 0, u1: 11 + st, v0: -9, v1: -6, z0: 27, z1: 31, col: L.skin });
+    parts.push({ u0: 0, u1: 11 - st, v0: 6, v1: 9, z0: 27, z1: 31, col: L.skin });
+    parts.push({ u0: -4, u1: 6, v0: -5, v1: 5, z0: 34, z1: 46, col: L.skin, face: true });
+    parts.push({ u0: -4.5, u1: 4, v0: -5.5, v1: 5.5, z0: 46, z1: 48, col: L.hair });
+    parts.push({ u0: -2, u1: 2, v0: -2, v1: 2, z0: 22, z1: 26, col: [120, 40, 36] }); // tache sur la chemise
+  } else {
+    parts.push({ u0: -2 - st, u1: 2 - st, v0: -9, v1: -6, z0: 20, z1: 35, col: L.skin });
+    parts.push({ u0: -2 + st, u1: 2 + st, v0: 6, v1: 9, z0: 20, z1: 35, col: L.skin });
+    parts.push({ u0: -5, u1: 5, v0: -5, v1: 5, z0: 36, z1: 48, col: L.skin, face: true });
+    parts.push({ u0: -5.5, u1: 5, v0: -5.5, v1: 5.5, z0: 48, z1: 51, col: L.hair });
+    parts.push({ u0: -5.5, u1: -4.8, v0: -5.5, v1: 5.5, z0: 38, z1: 48, col: L.hair });
+  }
+  return parts;
+}
+
+function makeCharacter(scene: Phaser.Scene, prefix: string, L: Look) {
   for (let d = 0; d < 8; d++) for (let f = 0; f < 2; f++) {
     const { c, ctx } = canvas(56, 76);
-    const st = f ? 3 : 0; // foulée
-    const parts: Part[] = [
-      { u0: -2 + st, u1: 3 + st, v0: -5, v1: -1, z0: 0, z1: 3, col: SHOE },
-      { u0: -2 - st, u1: 3 - st, v0: 1, v1: 5, z0: 0, z1: 3, col: SHOE },
-      { u0: -2 + st / 2, u1: 2 + st / 2, v0: -5, v1: -1, z0: 3, z1: 18, col: PANTS },
-      { u0: -2 - st / 2, u1: 2 - st / 2, v0: 1, v1: 5, z0: 3, z1: 18, col: PANTS },
-      { u0: -3, u1: 3, v0: -6, v1: 6, z0: 18, z1: 36, col: SHIRT },
-      { u0: -6, u1: -3, v0: -4, v1: 4, z0: 21, z1: 33, col: BAG },
-      { u0: -2 - st, u1: 2 - st, v0: -9, v1: -6, z0: 20, z1: 35, col: SKIN },
-      { u0: -2 + st, u1: 2 + st, v0: 6, v1: 9, z0: 20, z1: 35, col: SKIN },
-      { u0: -5, u1: 5, v0: -5, v1: 5, z0: 36, z1: 48, col: SKIN, face: true },
-      { u0: -5.5, u1: 5, v0: -5.5, v1: 5.5, z0: 48, z1: 51, col: HAIR },
-      { u0: -5.5, u1: -4.8, v0: -5.5, v1: 5.5, z0: 38, z1: 48, col: HAIR }
-    ];
-    drawModel(ctx, 28, 64, parts, (d * Math.PI) / 4);
-    scene.textures.addCanvas(`pl_${d}_${f}`, c);
+    drawModel(ctx, 28, 64, characterParts(L, f), (d * Math.PI) / 4);
+    scene.textures.addCanvas(`${prefix}_${d}_${f}`, c);
   }
+}
+
+function makePlayer(scene: Phaser.Scene) {
+  makeCharacter(scene, 'pl', SURVIVOR);
+  makeCharacter(scene, 'wk', WALKER);
+  // sac perdu (posé au sol)
+  const { c, ctx } = canvas(40, 36);
+  drawModel(ctx, 20, 30, [{ u0: -7, u1: 7, v0: -5, v1: 5, z0: 0, z1: 10, col: [110, 86, 52] }, { u0: -4, u1: 4, v0: -3, v1: 3, z0: 10, z1: 13, col: [90, 70, 42] }], 0.4);
+  scene.textures.addCanvas('lostbag', c);
+  // arc du coup porté
+  const a = canvas(96, 96);
+  a.ctx.strokeStyle = 'rgba(255,255,255,0.85)'; a.ctx.lineWidth = 6; a.ctx.lineCap = 'round';
+  a.ctx.beginPath(); a.ctx.arc(48, 48, 36, -0.9, 0.9); a.ctx.stroke();
+  a.ctx.strokeStyle = 'rgba(255,240,200,0.5)'; a.ctx.lineWidth = 12; a.ctx.beginPath(); a.ctx.arc(48, 48, 30, -0.6, 0.6); a.ctx.stroke();
+  scene.textures.addCanvas('slash', a.c);
 }
 
 /** Texture du personnage pour une des 8 directions de la grille (0 = +x, sens horaire). */

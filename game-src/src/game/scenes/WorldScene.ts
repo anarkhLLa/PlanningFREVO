@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { GameConfig } from '../../core/config';
 import { depthOf, toScreen, toWorld } from '../../core/iso';
 import { type CacheSpec, type WorldObject, type ZoneMap } from '../../core/map';
-import { facing8, stepPlayer, type PlayerState } from '../../core/movement';
+import { facing8, startDodge, stepPlayer, type PlayerState } from '../../core/movement';
+import { defeat, ENEMIES, playerAttack, spawnEnemies, stepEnemy, weaponOf, type Enemy } from '../../core/combat';
 import { carried, claimIfEmpty, findTarget, isOverloaded, newGame, openContainer, playerFromState, repairBench, storePlayer, type GameState } from '../../core/state';
 import { buildWorld, regionAt } from '../../core/world';
 import { syncFromPlanner, watchPlanner } from '../bridge';
@@ -31,6 +32,10 @@ export class WorldScene extends Phaser.Scene {
   private chunks = new Map<string, Chunk>();
   private chunkTimer = 0;
   private regionId = '';
+  private enemies: Enemy[] = [];
+  private enemyViews = new Map<string, { img: Phaser.GameObjects.Image; bar: Phaser.GameObjects.Graphics; walk: number; px: number; py: number; gone: boolean }>();
+  private bagImgs: Phaser.GameObjects.Image[] = [];
+  private dying = false;
   private controls!: Controls;
   private hud!: Hud;
   private walkTime = 0;
@@ -59,9 +64,18 @@ export class WorldScene extends Phaser.Scene {
     this.cloud = new CloudPush(() => this.state);
     this.panels = new Panels(root, () => this.state, () => this.onStateChanged(), () => this.interact(), this.controls.touch, () => this.doRepair());
     this.input.keyboard?.on('keydown-E', () => this.interact());
+    this.controls.onAttack = () => this.attack();
+    this.controls.onDodge = () => { if (!this.panels.open && startDodge(this.player)) navigator.vibrate?.(8); };
+    // clic gauche (souris) : frapper vers le pointeur (cahier 9.3)
+    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      if (ptr.wasTouch || ptr.button !== 0 || this.panels.open) return;
+      const w = toWorld(ptr.worldX, ptr.worldY);
+      this.attack(Math.atan2(w.y - this.player.y, w.x - this.player.x));
+    });
 
     this.syncPlanner(true);
     this.loadWorld();
+    this.respawnEnemies();
     this.setupCamera();
     watchPlanner(() => this.syncPlanner(false));
     this.autosave.soon(100);
@@ -75,9 +89,19 @@ export class WorldScene extends Phaser.Scene {
     this.target = null; this.targetImg = null; this.search = null;
     this.map = buildWorld(this.caches);
     this.state.zone = 'world';
+    for (const i of this.bagImgs) i.destroy();
+    this.bagImgs = [];
+    for (const b of this.state.lostBags) {
+      this.map.objects.push({ id: b.id, kind: 'container', name: '🎒 Ton sac perdu', x: b.x, y: b.y });
+      const sp = toScreen(b.x + 0.5, b.y + 0.5);
+      this.bagImgs.push(this.add.image(sp.x, sp.y, 'lostbag').setOrigin(0.5, 30 / 36).setDepth(depthOf(b.x + 0.5, b.y + 0.5, 0.05)));
+    }
     if (!this.player) this.player = playerFromState(this.state);
     this.updateCameraBounds();
     this.syncPlayerSprite(0);
+    // la caméra se place sur le personnage AVANT de calculer les morceaux visibles (pas de trou au démarrage)
+    const ps = toScreen(this.player.x, this.player.y);
+    this.cameras.main.centerOn(ps.x, ps.y);
     this.updateChunks();
     this.updateRegion();
   }
@@ -170,11 +194,12 @@ export class WorldScene extends Phaser.Scene {
     const input = this.panels.open ? { sx: 0, sy: 0, run: false } : this.controls.read();
     if (this.search && (input.sx || input.sy)) this.search = null;
     stepPlayer(this.player, input, this.map, dt);
+    if (!this.panels.open && !this.dying) this.updateEnemies(dt); // fenêtre ouverte = pause (cahier 31.4)
     this.syncPlayerSprite(dt);
     this.updateTarget();
     this.updateOcclusion();
-    this.chunkTimer -= dt;
-    if (this.chunkTimer <= 0) { this.chunkTimer = 0.25; this.updateChunks(); this.updateRegion(); }
+    const now = performance.now(); // horloge réelle : même un téléphone lent met la carte à jour 4 fois par seconde
+    if (now >= this.chunkTimer) { this.chunkTimer = now + 250; this.updateChunks(); this.updateRegion(); }
     this.hud.update(this.player, carried(this.state));
   }
 
@@ -235,6 +260,100 @@ export class WorldScene extends Phaser.Scene {
     return true;
   }
 
+  /* ---------- combat ---------- */
+  private respawnEnemies() {
+    for (const v of this.enemyViews.values()) { v.img.destroy(); v.bar.destroy(); }
+    this.enemyViews.clear();
+    this.enemies = spawnEnemies(this.state);
+    for (const e of this.enemies) {
+      const img = this.add.image(0, 0, 'wk_0_0').setOrigin(0.5, 64 / 76);
+      const bar = this.add.graphics();
+      this.enemyViews.set(e.id, { img, bar, walk: 0, px: e.x, py: e.y, gone: false });
+    }
+  }
+
+  private updateEnemies(dt: number) {
+    for (const e of this.enemies) {
+      const dmg = stepEnemy(e, this.player, this.map, dt, Math.random);
+      if (dmg > 0 && this.player.invuln <= 0 && this.player.health > 0) {
+        this.player.health = Math.max(0, this.player.health - dmg);
+        this.player.invuln = GameConfig.combat.hitInvuln;
+        this.hud.hit();
+        this.cameras.main.shake(90, 0.004);
+        navigator.vibrate?.(30);
+        if (this.player.health <= 0) { this.onDefeat(); return; }
+      }
+      this.syncEnemy(e, dt);
+    }
+  }
+
+  private syncEnemy(e: Enemy, dt: number) {
+    const v = this.enemyViews.get(e.id); if (!v || v.gone) return;
+    const sp = toScreen(e.x, e.y);
+    if (e.state === 'dead') {
+      v.gone = true; v.bar.clear();
+      this.tweens.add({ targets: v.img, alpha: 0, y: v.img.y + 6, duration: 700, onComplete: () => v.img.setVisible(false) });
+      return;
+    }
+    const moved = Math.hypot(e.x - v.px, e.y - v.py) > 0.002;
+    v.px = e.x; v.py = e.y;
+    v.walk = moved ? v.walk + dt * 6 : 0;
+    v.img.setTexture(`wk_${facing8(e.facing)}_${moved ? Math.floor(v.walk) % 2 : 0}`).setPosition(sp.x, sp.y).setDepth(depthOf(e.x, e.y, 0.5));
+    if (e.hurt > 0) v.img.setTintFill(0xff6b6b); else v.img.clearTint();
+    v.bar.clear();
+    const max = ENEMIES[e.def].hp;
+    if (e.hp < max) {
+      v.bar.fillStyle(0x000000, 0.55).fillRect(sp.x - 14, sp.y - 66, 28, 4);
+      v.bar.fillStyle(0xe05252, 1).fillRect(sp.x - 14, sp.y - 66, 28 * (e.hp / max), 4);
+      v.bar.setDepth(1e6);
+    }
+    // alerte : un point d'exclamation quand il vient de te repérer
+    if (e.state === 'alert') { v.bar.fillStyle(0xf5dc7a, 1).fillRect(sp.x - 2, sp.y - 80, 4, 8).fillRect(sp.x - 2, sp.y - 70, 4, 3); v.bar.setDepth(1e6); }
+  }
+
+  /** Frapper : vers la souris (PC) ou vers le rôdeur le plus proche (tactile), sinon devant soi. */
+  attack(angle?: number) {
+    const p = this.player, w = weaponOf(this.state);
+    if (this.panels.open || this.dying || p.attackCd > 0 || p.dodgeT > 0) return;
+    if (p.stamina < w.stamina) { this.panels.toast('😮‍💨 Trop essoufflé pour frapper : souffle un instant.'); return; }
+    if (angle === undefined) {
+      const near = this.enemies.filter(e => e.state !== 'dead').map(e => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) })).sort((a, b) => a.d - b.d)[0];
+      angle = near && near.d < 2.6 ? Math.atan2(near.e.y - p.y, near.e.x - p.x) : p.facing;
+    }
+    p.facing = angle; p.attackCd = w.cooldown; p.stamina -= w.stamina;
+    // arc du coup, orienté à l'écran
+    const a = toScreen(p.x, p.y), b = toScreen(p.x + Math.cos(angle) * 0.8, p.y + Math.sin(angle) * 0.8);
+    const sl = this.add.image(b.x, b.y - 28, 'slash').setRotation(Math.atan2(b.y - a.y, b.x - a.x)).setScale(0.75).setDepth(1e6).setAlpha(0.95);
+    this.tweens.add({ targets: sl, alpha: 0, scale: 0.95, duration: 170, onComplete: () => sl.destroy() });
+    const hit = playerAttack(p, angle, w, this.enemies, this.map);
+    if (hit.length) {
+      navigator.vibrate?.(12);
+      this.cameras.main.shake(50, 0.002);
+      for (const e of hit) if (e.state === 'dead') {
+        this.state.killed[e.id] = new Date().toISOString().slice(0, 10);
+        this.panels.toast('🪓 Rôdeur neutralisé');
+        this.autosave.soon();
+      }
+    }
+  }
+
+  /** Défaite douce : fondu, réveil au refuge, sac perdu sur place (cahier 11.6). */
+  private onDefeat() {
+    this.dying = true;
+    const cam = this.cameras.main;
+    cam.fadeOut(500, 10, 8, 12);
+    cam.once('camerafadeoutcomplete', () => {
+      const r = defeat(this.state, this.player, this.map.spawn);
+      this.loadWorld();
+      this.respawnEnemies();
+      this.dying = false;
+      cam.fadeIn(700, 10, 8, 12);
+      this.panels.toast(r.bagId ? '😵 Tu te réveilles au refuge. Ton sac perdu t’attend là où tu es tombé.' : '😵 Tu te réveilles au refuge. Rien n’est perdu.');
+      this.onStateChanged();
+      this.autosave.now();
+    });
+  }
+
   /* ---------- planning, sauvegarde, nuage ---------- */
   private syncPlanner(first: boolean) {
     const r = syncFromPlanner(this.state);
@@ -260,6 +379,7 @@ export class WorldScene extends Phaser.Scene {
       this.player = playerFromState(this.state);
       this.syncPlanner(false);
       this.loadWorld();
+      this.respawnEnemies();
       this.cameras.main.startFollow(this.playerImg, true, GameConfig.camera.followLerp, GameConfig.camera.followLerp);
       this.panels.toast('☁️ Partie synchronisée avec ton autre appareil');
       this.autosave.now();
@@ -270,6 +390,15 @@ export class WorldScene extends Phaser.Scene {
     const was = this.player.overloaded;
     this.player.overloaded = isOverloaded(this.state);
     if (this.player.overloaded && !was) this.panels.toast('🎒 Trop lourd : tu avances moins vite et tu ne peux plus courir. Dépose des objets dans une caisse.');
+    // sac perdu vidé : il disparaît
+    const ob = this.panels.openObject;
+    if (ob && ob.id.startsWith('lostbag:') && (this.state.containers[ob.id]?.items.items.length ?? 1) === 0) {
+      this.state.lostBags = this.state.lostBags.filter(b => b.id !== ob.id);
+      delete this.state.containers[ob.id];
+      this.panels.close();
+      this.panels.toast('🎒 Tu as récupéré ton sac.');
+      this.loadWorld();
+    }
     // cache vidée = contrat récupéré
     if (this.panels.openObject && claimIfEmpty(this.state, this.panels.openObject)) {
       this.panels.toast('📦 Cache récupérée ! Rapporte le butin au refuge.');

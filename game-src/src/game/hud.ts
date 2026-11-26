@@ -8,6 +8,7 @@ export class Hud {
   private hp: HTMLElement;
   private st: HTMLElement;
   private load: HTMLElement;
+  private flashEl!: HTMLElement;
   private last = { hp: -1, st: -1, ex: false, load: '' };
 
   constructor(root: HTMLElement, zoom: Zoomable) {
@@ -28,11 +29,15 @@ export class Hud {
       const b = (e.target as HTMLElement).closest('button');
       if (b) zoom.zoomBy(Number(b.dataset.z));
     });
-    root.append(top, zoomBox);
+    this.flashEl = document.createElement('div'); this.flashEl.className = 'hitflash';
+    root.append(top, zoomBox, this.flashEl);
     this.hp = top.querySelector('.hp i')!;
     this.st = top.querySelector('.st i')!;
     this.load = top.querySelector('.load')!;
   }
+
+  /** Bord rouge bref quand on est touché (pas de signal uniquement sonore, cahier 26.3). */
+  hit() { this.flashEl.classList.remove('on'); void this.flashEl.offsetWidth; this.flashEl.classList.add('on'); }
 
   setZone(name: string) { const z = document.querySelector('.hud-title .zone'); if (z) z.textContent = name; }
 

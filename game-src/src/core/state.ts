@@ -28,6 +28,8 @@ export interface GameState {
   containers: Record<string, ContainerState>;
   claimed: string[]; // contrats dont la cache a été récupérée (lu aussi par le planning)
   built: string[]; // constructions / réparations faites (ex. « refuge:bench »)
+  killed: Record<string, string>; // ennemis abattus -> jour (ils reviennent le lendemain)
+  lostBags: { id: string; x: number; y: number; at: number }[]; // sacs perdus après une défaite
 }
 
 export function newGame(map: ZoneMap, now = Date.now()): GameState {
@@ -43,7 +45,9 @@ export function newGame(map: ZoneMap, now = Date.now()): GameState {
     ledger: newLedger(),
     containers: {},
     claimed: [],
-    built: []
+    built: [],
+    killed: {},
+    lostBags: []
   };
   post(s.ledger, 'start:capsules:v1', GameConfig.start.capsules, 'Capsules de départ', now);
   return s;
@@ -63,6 +67,8 @@ export function migrate(raw: unknown): GameState | null {
   s.containers ||= {};
   s.claimed ||= [];
   s.built ||= [];
+  s.killed ||= {};
+  s.lostBags ||= [];
   s.equipment ||= {};
   return s;
 }

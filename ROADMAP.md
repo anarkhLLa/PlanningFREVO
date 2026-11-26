@@ -45,7 +45,11 @@ Astuce tests : en navigateur headless le jeu tourne à peu d'images/seconde (pas
 
 ## Étapes suivantes
 **Fait après l'étape 1** : monde continu (refuge au nord, garage 32 cases au sud, reliés par la route), 38 tests.
-**Prochaine session proposée** : test de style graphique (personnage Mixamo marche/course 8 directions, mur, sol, caisse rendus par un script Blender) OU étape 2 (survie et combat) — à choisir par l'utilisateur.
+## Étape 2 — Survie et combat (en cours)
+- [x] **Session 1** : `core/pathfind.ts` (A* 8 directions sans couper les coins, ligne de vue), `core/combat.ts` : rôdeur (36 PV, lent, 7 dégâts, recharge 1,5 s, vue 6 cases / 140°, sent à 1,6 case, laisse 12 cases), IA idle → patrol → alert (« ! ») → chase → attack (élan 0,45 s) → return ; 4 rôdeurs dans la région du garage seulement (le refuge reste sûr), un rôdeur abattu revient le lendemain (aucun butin : rien à farmer, `state.killed`). Joueur : coup dans un arc (outil 12 dégâts, mains nues 5), recul, recharge, coût d'endurance ; **clic gauche vers la souris**, F devant soi, **Espace = esquive** (ruée invulnérable, 15 d'endurance) ; tactile ⚔️ (vise le rôdeur le plus proche) et 💨. Coup reçu : bord rouge, secousse, vibration, invulnérabilité 0,5 s. **Défaite douce** : fondu, réveil au refuge à 60 % de santé, 50 % des ressources transportées dans un **sac perdu** à l'endroit de la chute (`state.lostBags`), outil/capsules/bâtiments/progression intacts ; `combat.gentle = true` = aucune perte. Ennemis figés quand une fenêtre est ouverte ou le jeu fermé. Correctif : la caméra se centre avant le 1er calcul des morceaux (plus de trou au démarrage sur téléphone). 50 tests.
+- [ ] **Session 2** : armes (bâton, pied-de-biche réparé, hache) avec dégâts / portée / vitesse / durabilité, équipement en main depuis l'inventaire, soins (kit médical, bandage) via la caisse et le garage, infecté rapide (2e ennemi), réglage « mode doux » accessible dans le jeu, petits sons de combat (désactivables).
+
+
 2. Survie et combat · 3. Construction et crafting · 4. Économie et contrats complets · 5. Missions et histoire · 6. Régions et carte · 7. Ergonomie et équilibrage
 M1. Fondations multijoueur · M2. Visites · M3. Commerce · M4. Coopération · M5. Compétition · M6. Monde communautaire
 (détail, estimations et justification : voir l'analyse du 26/11/2026, reprise ci-dessus dans « Décisions »)
