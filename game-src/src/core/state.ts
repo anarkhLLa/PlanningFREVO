@@ -7,7 +7,7 @@ import { newPlayer, type PlayerState } from './movement';
 import { hashSeed, mulberry32 } from './rng';
 
 /** Version du format de sauvegarde : à incrémenter avec une migration (cahier 25.3). */
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 
 export interface ContainerState {
   items: Inventory;
@@ -54,7 +54,12 @@ export function migrate(raw: unknown): GameState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as GameState;
   if (typeof s.schema !== 'number' || !s.inventory || !s.ledger) return null;
-  // (aucune migration encore : schéma 1)
+  // v1 -> v2 : zones séparées -> monde continu. Le garage est désormais 32 cases plus au sud.
+  if (s.schema < 2) {
+    if (s.zone === 'garage') s.player.y += 32;
+    s.zone = 'world';
+    s.schema = 2;
+  }
   s.containers ||= {};
   s.claimed ||= [];
   s.built ||= [];

@@ -1,42 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import { addItem } from '../src/core/inventory';
-import { buildGarage, exitAt, GARAGE_CACHE_SLOTS, isSolid } from '../src/core/map';
-import { collides, newPlayer, stepPlayer } from '../src/core/movement';
-import { capsules, claimIfEmpty, mergeSaves, newGame, openContainer, repairBench, takeAll } from '../src/core/state';
+import { GARAGE_CACHE_SLOTS, isSolid } from '../src/core/map';
+import { buildWorld, regionAt, regionOffset } from '../src/core/world';
+import { newPlayer, stepPlayer } from '../src/core/movement';
+import { capsules, claimIfEmpty, mergeSaves, migrate, newGame, openContainer, repairBench, takeAll } from '../src/core/state';
 import { post } from '../src/core/ledger';
 import { buildZone } from '../src/core/zones';
 
 const caches = [{ contractId: 'c_a', title: 'Le stock', loot: [['wood', 4], ['scrap', 3], ['components', 1]] as [string, number][] }];
 
-describe('zones et sorties', () => {
-  it('la route du refuge mène au garage et inversement', () => {
-    const r = buildZone('refuge'), g = buildZone('garage');
-    const e1 = exitAt(r, 27.5, 31.5)!; expect(e1.to).toBe('garage');
-    const e2 = exitAt(g, 27.5, 0.5)!; expect(e2.to).toBe('refuge');
-    // les points d'arrivée sont libres et ne sont pas eux-mêmes des sorties (pas de ping-pong)
-    expect(collides(g, e1.entry.x, e1.entry.y)).toBe(false); expect(exitAt(g, e1.entry.x, e1.entry.y)).toBeNull();
-    expect(collides(r, e2.entry.x, e2.entry.y)).toBe(false); expect(exitAt(r, e2.entry.x, e2.entry.y)).toBeNull();
+describe('monde continu', () => {
+  const W = buildZone();
+  it('le refuge et le garage sont sur une seule carte, reliés par la route', () => {
+    expect(W.w).toBe(32); expect(W.h).toBe(64);
+    expect(regionAt(18, 14)?.id).toBe('refuge'); expect(regionAt(27, 40)?.id).toBe('garage');
+    // on part du refuge et on suit la route vers le sud sans jamais être bloqué
+    const p = newPlayer(27.5, 20.5);
+    for (let i = 0; i < 400 && p.y < 45; i++) stepPlayer(p, { sx: -0.5, sy: 1, run: true }, W, 0.05);
+    expect(p.y).toBeGreaterThan(45);
+    expect(regionAt(p.x, p.y)?.id).toBe('garage');
   });
-  it('le garage est ouvert côté route et les caches sont accessibles', () => {
-    const g = buildGarage(4, caches);
-    expect(isSolid(g, 20, 13)).toBe(false); // grande porte
-    const p = newPlayer(27.5, 2);
-    // on marche vers la porte puis vers l'intérieur
-    for (let i = 0; i < 400; i++) stepPlayer(p, { sx: 0, sy: 1, run: false }, g, 0.05);
-    expect(collides(g, p.x, p.y)).toBe(false);
+  it('le garage est ouvert côté route et ses caches sont posées à leur place', () => {
+    const g = buildWorld(caches), off = regionOffset('garage');
+    expect(isSolid(g, 20 + off.x, 13 + off.y)).toBe(false); // grande porte
     const cache = g.objects.find(o => o.contractId === 'c_a')!;
-    expect([cache.x, cache.y]).toEqual(GARAGE_CACHE_SLOTS[0]);
+    expect([cache.x - off.x, cache.y - off.y]).toEqual(GARAGE_CACHE_SLOTS[0]);
     expect(isSolid(g, cache.x, cache.y)).toBe(true);
   });
-  it('le garage est déterministe', () => {
-    expect(JSON.stringify(buildGarage(4, caches))).toBe(JSON.stringify(buildGarage(4, caches)));
+  it('le monde est déterministe', () => {
+    expect(JSON.stringify(buildWorld(caches))).toBe(JSON.stringify(buildWorld(caches)));
+  });
+  it('une ancienne sauvegarde (zone garage) est convertie sans rien perdre', () => {
+    const old = newGame(buildZone()) as unknown as Record<string, unknown> & { player: { y: number }; zone: string; schema: number };
+    old.schema = 1; old.zone = 'garage'; old.player.y = 5;
+    const s = migrate(JSON.parse(JSON.stringify(old)))!;
+    expect(s.zone).toBe('world'); expect(s.player.y).toBe(37); expect(s.schema).toBe(2);
   });
 });
 
 describe('caches de contrats', () => {
   it('la cache contient le butin du contrat ; vidée = récupérée une seule fois', () => {
     const s = newGame(buildZone('refuge'));
-    const g = buildGarage(4, caches), obj = g.objects.find(o => o.contractId === 'c_a')!;
+    const g = buildWorld(caches), obj = g.objects.find(o => o.contractId === 'c_a')!;
     const c = openContainer(s, obj);
     expect(c.items.items.map(i => i.def + i.qty)).toEqual(['wood4', 'scrap3', 'components1']);
     expect(claimIfEmpty(s, obj)).toBe(false); // pas encore vidée

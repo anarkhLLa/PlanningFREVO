@@ -19,6 +19,8 @@ Ce fichier sert à reprendre le travail dans une nouvelle session sans tout rée
 - **Succès « Couché tôt, levé tôt »** : « 🌙 Je me couche » avant 23 h 00, puis « ☀️ Je suis levé » avant 9 h 00 le lendemain, au moins 5 h après. Une fois par nuit, aucune sanction ni série. Heures, délai et récompense réglables.
 - **Multijoueur (plus tard)** : Supabase (comptes, Postgres, fonctions transactionnelles) + Colyseus (salles temps réel autoritaires). La logique du jeu vit dans `game-src/src/core/` (TypeScript pur, sans Phaser) pour être réutilisée côté serveur.
 
+- **Monde continu (décidé le 26/11)** : pas de changement de carte ni de transition. Les régions (`core/world.ts`, tableau `REGIONS` avec position `ox, oy`) sont posées côte à côte sur une seule grande carte ; on les traverse en marchant. Affichage par morceaux de 16×16 cases autour de la caméra (le monde apparaît en avançant, reste léger sur téléphone). Ajouter une région = une fonction de construction déterministe + une position. Sauvegarde schéma 2 (conversion automatique des parties v1).
+
 ## Architecture
 ```
 game-src/src/core/   règles pures (aucun import Phaser) : config, iso, map, movement, rng…
@@ -42,6 +44,7 @@ Débogage : `window.__scene` (état, joueur) dans la console du navigateur.
 Astuce tests : en navigateur headless le jeu tourne à peu d'images/seconde (pas de GPU) et chaque pas de temps est plafonné à 0,05 s : garder les touches enfoncées jusqu'à une condition (`waitForFunction`) plutôt qu'un délai fixe. Ne pas utiliser l'horloge simulée de Playwright pendant les phases jouées (elle fige l'animation) : reculer plutôt l'heure des événements du planning.
 
 ## Étapes suivantes
+**Fait après l'étape 1** : monde continu (refuge au nord, garage 32 cases au sud, reliés par la route), 38 tests.
 **Prochaine session proposée** : test de style graphique (personnage Mixamo marche/course 8 directions, mur, sol, caisse rendus par un script Blender) OU étape 2 (survie et combat) — à choisir par l'utilisateur.
 2. Survie et combat · 3. Construction et crafting · 4. Économie et contrats complets · 5. Missions et histoire · 6. Régions et carte · 7. Ergonomie et équilibrage
 M1. Fondations multijoueur · M2. Visites · M3. Commerce · M4. Coopération · M5. Compétition · M6. Monde communautaire

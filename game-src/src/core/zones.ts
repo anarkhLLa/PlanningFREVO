@@ -1,7 +1,7 @@
-import { buildGarage, buildRefuge, type CacheSpec, type ZoneMap } from './map';
+import type { CacheSpec, ZoneMap } from './map';
+import { buildWorld } from './world';
 
-/** Registre des zones : une zone = une carte construite de façon déterministe. */
-export function buildZone(id: string, caches: CacheSpec[] = []): ZoneMap {
-  if (id === 'garage') return buildGarage(4, caches);
-  return buildRefuge(1);
+/** Il n'y a plus qu'une carte : le monde continu (les anciennes « zones » sont des régions). */
+export function buildZone(_id = 'world', caches: CacheSpec[] = []): ZoneMap {
+  return buildWorld(caches);
 }

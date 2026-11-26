@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import { GameConfig } from '../../core/config';
-import { depthOf, toScreen } from '../../core/iso';
-import { exitAt, type CacheSpec, type WorldObject, type ZoneMap } from '../../core/map';
+import { depthOf, toScreen, toWorld } from '../../core/iso';
+import { type CacheSpec, type WorldObject, type ZoneMap } from '../../core/map';
 import { facing8, stepPlayer, type PlayerState } from '../../core/movement';
 import { carried, claimIfEmpty, findTarget, isOverloaded, newGame, openContainer, playerFromState, repairBench, storePlayer, type GameState } from '../../core/state';
-import { buildZone } from '../../core/zones';
+import { buildWorld, regionAt } from '../../core/world';
 import { syncFromPlanner, watchPlanner } from '../bridge';
 import { CloudPush, reconcile } from '../cloud';
 import { Hud } from '../hud';
@@ -14,10 +14,13 @@ import { AutoSave } from '../save';
 import { blockKey, GROUND_VARIANTS, groundKey, makeTextures, playerFrame } from '../textures';
 
 interface BlockSprite { img: Phaser.GameObjects.Image; x: number; y: number; z: number }
+interface Chunk { imgs: Phaser.GameObjects.GameObject[]; blocks: BlockSprite[] }
+const CHUNK = 16; // cases par côté
 
 /**
- * Scène du monde : affiche la zone courante (refuge, garage…), gère le survivant,
- * les interactions, les changements de zone, la sauvegarde et le lien avec le planning.
+ * Scène du monde continu : une seule grande carte faite de régions (refuge, garage…),
+ * affichée par morceaux de 16×16 cases autour de la caméra (on voit le monde apparaître
+ * en avançant, sans transition). Gère le survivant, les interactions, la sauvegarde et le planning.
  * L'interface HTML (HUD, fenêtres, contrôles) est créée une seule fois.
  */
 export class WorldScene extends Phaser.Scene {
@@ -25,8 +28,9 @@ export class WorldScene extends Phaser.Scene {
   private player!: PlayerState;
   private playerImg!: Phaser.GameObjects.Image;
   private shadow!: Phaser.GameObjects.Image;
-  private mapImgs: Phaser.GameObjects.Image[] = [];
-  private blocks: BlockSprite[] = [];
+  private chunks = new Map<string, Chunk>();
+  private chunkTimer = 0;
+  private regionId = '';
   private controls!: Controls;
   private hud!: Hud;
   private walkTime = 0;
@@ -38,13 +42,12 @@ export class WorldScene extends Phaser.Scene {
   private target: WorldObject | null = null;
   private targetImg: Phaser.GameObjects.Image | null = null;
   private search: { obj: WorldObject; start: number } | null = null; // horloge réelle (indépendante des FPS)
-  private travelling = false;
 
   constructor() { super('world'); }
 
   create() {
     makeTextures(this);
-    this.state = (this.registry.get('state') as GameState | null) ?? newGame(buildZone('refuge'));
+    this.state = (this.registry.get('state') as GameState | null) ?? newGame(buildWorld());
 
     this.shadow = this.add.image(0, 0, 'shadow');
     this.playerImg = this.add.image(0, 0, 'pl_0_0').setOrigin(0.5, 64 / 76);
@@ -58,7 +61,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-E', () => this.interact());
 
     this.syncPlanner(true);
-    this.loadZone(this.state.zone || 'refuge');
+    this.loadWorld();
     this.setupCamera();
     watchPlanner(() => this.syncPlanner(false));
     this.autosave.soon(100);
@@ -66,56 +69,73 @@ export class WorldScene extends Phaser.Scene {
     (window as unknown as { __scene: WorldScene }).__scene = this; // débogage / tests
   }
 
-  /* ---------- zones ---------- */
-  private loadZone(id: string, entry?: { x: number; y: number }) {
-    for (const i of this.mapImgs) i.destroy();
-    this.mapImgs = []; this.blocks = []; this.target = null; this.targetImg = null; this.search = null;
-    this.map = buildZone(id, this.caches);
-    this.state.zone = this.map.id;
+  /* ---------- monde continu, affiché par morceaux ---------- */
+  private loadWorld() {
+    this.clearChunks();
+    this.target = null; this.targetImg = null; this.search = null;
+    this.map = buildWorld(this.caches);
+    this.state.zone = 'world';
     if (!this.player) this.player = playerFromState(this.state);
-    if (entry) { this.player.x = entry.x; this.player.y = entry.y; }
-    this.drawMap();
-    this.hud.setZone(this.map.name);
     this.updateCameraBounds();
     this.syncPlayerSprite(0);
+    this.updateChunks();
+    this.updateRegion();
   }
 
-  private drawMap() {
-    const m = this.map;
-    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+  private clearChunks() {
+    for (const c of this.chunks.values()) for (const o of c.imgs) o.destroy();
+    this.chunks.clear();
+  }
+
+  private get blocks(): BlockSprite[] {
+    const out: BlockSprite[] = [];
+    for (const c of this.chunks.values()) out.push(...c.blocks);
+    return out;
+  }
+
+  /** Crée les morceaux visibles (+ une marge), détruit ceux qui sont loin. */
+  private updateChunks() {
+    const v = this.cameras.main.worldView;
+    // les 4 coins de l'écran projetés sur la grille, + marge pour les blocs hauts
+    const pts = [toWorld(v.x, v.y), toWorld(v.right, v.y), toWorld(v.x, v.bottom + 160), toWorld(v.right, v.bottom + 160)];
+    const m = 4;
+    const x0 = Math.floor((Math.min(...pts.map(p => p.x)) - m) / CHUNK), x1 = Math.floor((Math.max(...pts.map(p => p.x)) + m) / CHUNK);
+    const y0 = Math.floor((Math.min(...pts.map(p => p.y)) - m) / CHUNK), y1 = Math.floor((Math.max(...pts.map(p => p.y)) + m) / CHUNK);
+    const want = new Set<string>();
+    for (let cy = Math.max(0, y0); cy <= Math.min(Math.ceil(this.map.h / CHUNK) - 1, y1); cy++)
+      for (let cx = Math.max(0, x0); cx <= Math.min(Math.ceil(this.map.w / CHUNK) - 1, x1); cx++) want.add(cx + ',' + cy);
+    for (const [k, c] of this.chunks) if (!want.has(k)) { for (const o of c.imgs) o.destroy(); this.chunks.delete(k); }
+    for (const k of want) if (!this.chunks.has(k)) this.chunks.set(k, this.buildChunk(...(k.split(',').map(Number) as [number, number])));
+  }
+
+  private buildChunk(cx: number, cy: number): Chunk {
+    const m = this.map, imgs: Phaser.GameObjects.GameObject[] = [], blocks: BlockSprite[] = [];
+    const bench = m.objects.find(o => o.id === 'refuge:bench');
+    const benchOk = this.state.built.includes('refuge:bench');
+    for (let y = cy * CHUNK; y < Math.min(m.h, (cy + 1) * CHUNK); y++) for (let x = cx * CHUNK; x < Math.min(m.w, (cx + 1) * CHUNK); x++) {
       const c = m.cells[y * m.w + x];
       const p = toScreen(x + 0.5, y + 0.5);
-      this.mapImgs.push(this.add.image(p.x, p.y, groundKey(c.ground) + ((x * 7 + y * 13) % GROUND_VARIANTS)).setDepth(-1e7));
+      imgs.push(this.add.image(p.x, p.y, groundKey(c.ground) + ((x * 7 + y * 13) % GROUND_VARIANTS)).setDepth(-1e7));
       c.stack.forEach((b, z) => {
-        const key = b === 'bench' && m.id === 'refuge' && this.state.built.includes('refuge:bench') ? 'bench_ok' : b;
+        const key = b === 'bench' && benchOk && bench && bench.x === x && bench.y === y ? 'bench_ok' : b;
         const img = this.add.image(p.x, p.y - z * GameConfig.blockH, blockKey(key)).setOrigin(0.5, 0.75).setDepth(depthOf(x + 0.5, y + 0.5, z));
-        this.mapImgs.push(img);
-        this.blocks.push({ img, x: x + 0.5, y: y + 0.5, z });
+        imgs.push(img); blocks.push({ img, x: x + 0.5, y: y + 0.5, z });
       });
     }
-    // marqueurs de sortie (flèche au sol)
-    for (const e of m.exits) {
-      const p = toScreen((e.x0 + e.x1 + 1) / 2, (e.y0 + e.y1 + 1) / 2);
-      const t = this.add.text(p.x, p.y - 30, `➜ ${e.label}`, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#fff', backgroundColor: 'rgba(20,22,36,0.65)', padding: { x: 6, y: 3 } }).setOrigin(0.5).setDepth(1e7);
-      this.mapImgs.push(t as unknown as Phaser.GameObjects.Image);
-    }
+    return { imgs, blocks };
   }
 
-  /** Marcher sur une sortie : fondu, changement de zone, sauvegarde. */
-  private checkExit() {
-    if (this.travelling) return;
-    const e = exitAt(this.map, this.player.x, this.player.y);
-    if (!e) return;
-    this.travelling = true;
-    const cam = this.cameras.main;
-    cam.fadeOut(220, 20, 22, 36);
-    cam.once('camerafadeoutcomplete', () => {
-      this.loadZone(e.to, e.entry);
-      cam.fadeIn(260, 20, 22, 36);
-      this.travelling = false;
-      this.onStateChanged();
-    });
+  /** Nom de la région en haut de l'écran, mis à jour en marchant. */
+  private updateRegion() {
+    const r = regionAt(this.player.x, this.player.y);
+    const id = r?.id ?? '';
+    if (id === this.regionId) return;
+    this.regionId = id;
+    this.hud.setZone(r?.name ?? 'Terres abandonnées');
+    if (r && this.regionToastReady) this.panels.toast('📍 ' + r.name);
+    this.regionToastReady = true;
   }
+  private regionToastReady = false;
 
   private setupCamera() {
     const cam = this.cameras.main, C = GameConfig.camera;
@@ -147,13 +167,14 @@ export class WorldScene extends Phaser.Scene {
   /* ---------- boucle ---------- */
   update(_t: number, deltaMs: number) {
     const dt = Math.min(0.05, deltaMs / 1000);
-    const input = this.panels.open || this.travelling ? { sx: 0, sy: 0, run: false } : this.controls.read();
+    const input = this.panels.open ? { sx: 0, sy: 0, run: false } : this.controls.read();
     if (this.search && (input.sx || input.sy)) this.search = null;
     stepPlayer(this.player, input, this.map, dt);
     this.syncPlayerSprite(dt);
     this.updateTarget();
     this.updateOcclusion();
-    this.checkExit();
+    this.chunkTimer -= dt;
+    if (this.chunkTimer <= 0) { this.chunkTimer = 0.25; this.updateChunks(); this.updateRegion(); }
     this.hud.update(this.player, carried(this.state));
   }
 
@@ -189,7 +210,7 @@ export class WorldScene extends Phaser.Scene {
     const t = this.target;
     if (!t || this.panels.open || this.search) return;
     if (t.kind === 'bench') {
-      if (this.map.id !== 'refuge') { this.panels.toast('🔧 Un vieil établi rouillé. Rien d’utilisable.'); return; }
+      if (t.id !== 'refuge:bench') { this.panels.toast('🔧 Un vieil établi rouillé. Rien d’utilisable.'); return; }
       this.panels.showBench(this.state.built.includes('refuge:bench'));
       return;
     }
@@ -221,7 +242,7 @@ export class WorldScene extends Phaser.Scene {
     const caches = r.contracts.filter(c => c.state === 'LOOT_AVAILABLE').map(c => ({ contractId: c.id, title: c.title, loot: c.loot }));
     const changedCaches = JSON.stringify(caches.map(c => c.contractId)) !== JSON.stringify(this.caches.map(c => c.contractId));
     this.caches = caches;
-    if (changedCaches && this.map?.id === 'garage' && !this.panels.open) this.loadZone('garage'); // nouvelle cache : elle apparaît tout de suite
+    if (changedCaches && this.map && !this.panels.open) this.loadWorld(); // nouvelle cache : elle apparaît tout de suite
     if (r.added.length) {
       const total = r.added.reduce((a, x) => a + x.amount, 0);
       this.panels.toast(r.added.length === 1 ? `📻 +${total} 🧢 · ${r.added[0].reason}` : `📻 ${first ? 'Pendant ton absence' : 'Nouveau'} : +${total} 🧢 (${r.added.length} récompenses)`);
@@ -235,11 +256,10 @@ export class WorldScene extends Phaser.Scene {
     try {
       const r = await reconcile(JSON.parse(JSON.stringify((storePlayer(this.state, this.player), this.state))));
       if (!r || !r.changed) return;
-      const zoneBefore = this.state.zone;
       this.state = r.state;
       this.player = playerFromState(this.state);
       this.syncPlanner(false);
-      this.loadZone(this.state.zone || zoneBefore);
+      this.loadWorld();
       this.cameras.main.startFollow(this.playerImg, true, GameConfig.camera.followLerp, GameConfig.camera.followLerp);
       this.panels.toast('☁️ Partie synchronisée avec ton autre appareil');
       this.autosave.now();
