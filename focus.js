@@ -322,7 +322,7 @@ function renderNow() {
     ${bar('lv', pctLv)}
     <div class="fprog-row small"><span>Aujourd'hui : <b>+${xd} XP</b>${doneToday ? ` · ${doneToday} fait${doneToday > 1 ? 's' : ''}` : ''}</span><span>Cette semaine : ${summaryParts(wk).slice(0, 2).join(', ') || 'ça commence ici'}</span></div>
     ${bar('day', pctDay)}</div>`;
-  h += sleepHTML() + loHTML();
+  h += sleepHTML(); // Last Outpost en pause (28/11) : la carte capsules n'est plus affichée
   // 3. état d'énergie (un geste)
   h += `<div class="fsec"><div class="fq">Comment est ton énergie là, maintenant ?</div>
     <div class="fen">${ENERGY.map(([k, ic, l]) => `<button class="fen-b${f.en === k ? ' on' : ''}" data-act="f-en" data-v="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>
@@ -357,7 +357,6 @@ function renderNow() {
   }).join('')}</div>`;
   // 8. revue
   h += `<div class="fsec frev">${B('f-review', '🔁 Revue rapide des tâches', '', 'data-v="all"')}${noEn ? `<small>${noEn} sans énergie</small>` : ''}</div>`;
-  h += `<a class="fstuck" href="game/" style="text-decoration:none;text-align:center">🎮 Last Outpost <small style="opacity:.6">(prototype)</small></a>`;
   $('#main').innerHTML = `<div class="fwrap">${h}</div>`;
   requestAnimationFrame(() => requestAnimationFrame(() => $$('[data-bar]').forEach(el => { el.style.width = el.dataset.to + '%'; })));
 }
@@ -470,7 +469,7 @@ function focusAct(a, el) {
     case 'f-wake': {
       const st = sleepState(), c = sleepCfg(), u = snapshot();
       if (st.show !== 'wake') return;
-      if (Date.now() - st.since >= c.minH * 3600e3) { award('earlybird', null, 10, 'Couché tôt, levé tôt'); commit('☀️ Couché tôt, levé tôt ! +15 🧢 dans Last Outpost', u); celebrate(10, true); }
+      if (Date.now() - st.since >= c.minH * 3600e3) { award('earlybird', null, 10, 'Couché tôt, levé tôt'); commit('☀️ Couché tôt, levé tôt !', u); celebrate(10, true); }
       else { award('wake', null, 0, 'Levé'); commit('☀️ Bonjour ! (nuit trop courte pour le succès)', u); }
       return;
     }

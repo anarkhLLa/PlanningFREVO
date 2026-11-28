@@ -1,5 +1,8 @@
 # ROADMAP — LAST OUTPOST
 
+> **⏸ EN PAUSE depuis le 28/11/2026.** Le jeu reste dans le dépôt (`game-src/`, `game/`) mais n'est plus relié au planning.
+> Nouvelle direction : **un serveur Minecraft relié au planning** (voir `MINECRAFT.md`). Les règles d'économie et d'anti-doublon de `game-src/src/core/economy.ts` servent de référence.
+
 Jeu de survie isométrique (style blocs, façon Minecraft) relié au planning PlanningFREVO.
 Ce fichier sert à reprendre le travail dans une nouvelle session sans tout réexpliquer.
 
